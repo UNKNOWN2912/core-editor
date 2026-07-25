@@ -2,3 +2,6 @@
 	path = imgui
 	url = https://github.com/ocornut/imgui.git
 	branch = docking
+[submodule "CoreEngine"]
+	path = CoreEngine
+	url = https://github.com/UNKNOWN2912/core-engine.git
