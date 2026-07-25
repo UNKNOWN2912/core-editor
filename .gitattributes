@@ -1,0 +1,4 @@
+*.bin filter=lfs diff=lfs merge=lfs -text
+Model filter=lfs diff=lfs merge=lfs -text
+Model/M/rungholt.obj filter=lfs diff=lfs merge=lfs -text
+Models/M/rungholt.obj filter=lfs diff=lfs merge=lfs -text
