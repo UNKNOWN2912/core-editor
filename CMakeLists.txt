@@ -1,8 +1,19 @@
+cmake_minimum_required(VERSION 3.20.0)
 
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+
+project(editor)
+
+
+include_directories("Sources/")
 include_directories("imgui/")
+include_directories("CoreEngine/")
+include_directories("CoreEngine/Vendor/glm")
 
 file(GLOB sources 
-    "*.cpp",
+	"Sources/*.cpp",
     "imgui/*.cpp"
     "imgui/misc/cpp/*.cpp",
     "imgui/backends/imgui_impl_glfw.cpp"
@@ -10,9 +21,9 @@ file(GLOB sources
     )
     
 
+add_subdirectory(CoreEngine)
 add_executable(Editor ${sources}) 
 target_link_libraries(Editor engine-core)
-    
     
 set_target_properties(Editor PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
