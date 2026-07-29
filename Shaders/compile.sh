@@ -6,3 +6,4 @@ echo "Compiling shaders"
 ./compile_shader.sh directional
 ./compile_shader.sh physical
 ./compile_shader.sh text
+./compile_shader.sh bezier

@@ -31,6 +31,11 @@ void CameraController::Update()
 {
     CHROME_TRACE_FUNCTION();
 
+    if (mSpeed == 1)
+    {
+        LOG("undefined");
+    }
+
     glm::vec3 cameraFront = mCamera->GetFront();
     if (mEnableMouseControl)
     {

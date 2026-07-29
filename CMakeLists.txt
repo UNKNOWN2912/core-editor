@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.20.0)
 
-
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
-
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_BUILD_TYPE Debug)
 
 project(editor)
 
@@ -12,6 +13,7 @@ include_directories("imgui/")
 include_directories("CoreEngine/")
 include_directories("CoreEngine/Vendor/glm")
 
+
 file(GLOB sources 
 	"Sources/*.cpp",
     "imgui/*.cpp"
@@ -19,7 +21,7 @@ file(GLOB sources
     "imgui/backends/imgui_impl_glfw.cpp"
     "imgui/backends/imgui_impl_vulkan.cpp"
     )
-    
+
 
 add_subdirectory(CoreEngine)
 add_executable(Editor ${sources}) 

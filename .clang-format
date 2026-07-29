@@ -1,0 +1,5 @@
+BasedOnStyle: Microsoft
+ColumnLimit: 0
+IndentWidth: 4
+TabWidth: 4
+AccessModifierOffset: -4
