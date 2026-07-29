@@ -1,31 +1,14 @@
-#include "Assets/FontImporter.hpp"
-#include "EditorUi.hpp"
-#include "EntityComponentSystem/SceneSerializer.hpp"
-#include "Renderer/Converter.hpp"
-#include "Renderer/TextRenderer.hpp"
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include "Assets/ModelImporter.hpp"
 #include "CameraController.hpp"
-#include "EntityComponentSystem/Component.hpp"
-#include "backends/imgui_impl_glfw.h"
+#include "EditorUi.hpp"
+#include "Maths/Random.hpp"
 #include "backends/imgui_impl_vulkan.h"
-#include "imgui.h"
-#include "misc/cpp/imgui_stdlib.h"
 #include <Engine.hpp>
 
-#define BindCommandCallback(callback) std::bind(&callback, this, std::placeholders::_1)
+#define BindCommandCallback(callback) \
+    std::bind(&callback, this, std::placeholders::_1)
 
-struct PickerPushConstant
-{
-    glm::mat4 model;
-    glm::vec4 idcolor;
-};
-
-struct PickerUniformData
-{
-    glm::mat4 view;
-    glm::mat4 projection;
-};
+#define ENABLE_EDITOR 1
+#define IMPORT_MODELS 0
 
 class Editor : public Application
 {
@@ -33,9 +16,9 @@ class Editor : public Application
     Camera mCamera;
     CameraController mController;
     Scene mScene;
-
+#if ENABLE_EDITOR
     EditorUI mEditorUi;
-
+#endif
     ShaderID mIdShader;
 
     std::shared_ptr<Mesh> mBillboard = std::make_shared<Mesh>();
@@ -43,7 +26,8 @@ class Editor : public Application
     void OnInitialize() override
     {
         int scale = 240;
-        Renderer::SetResolution({16 * scale, 9 * scale});
+        Renderer::SetSampleCount(SampleCount::One);
+        Renderer::SetResolution({3840, 2160});
     }
 
     void OnStart() override
@@ -54,42 +38,60 @@ class Editor : public Application
 
         mSurface = Renderer::CreateSurface(GetWindow());
         GetWindow().SetTitle("Editor");
-        GetWindow().Maximize();
+        GetWindow().SetFullscreen(true);
 
-        Renderer::SetBasicShader("Shaders/physical.vert.spv", "Shaders/physical.frag.spv");
+        Renderer::SetBasicShader("Shaders/physical.vert.spv",
+                                 "Shaders/physical.frag.spv");
 
+        TextRenderer::Initialize();
+
+        if (std::filesystem::exists("./test.json"))
+        {
+            SceneSerializer serializer;
+            serializer.Import("test.json", mScene);
+        }
+
+        Material skyboxMaterial;
+        skyboxMaterial.shader = ShaderManager::Load("Shaders/skybox.vert.spv", "Shaders/skybox.frag.spv");
+        skyboxMaterial.cullMode = CullMode::None;
+        skyboxMaterial.enableDepthTest = false;
+        skyboxMaterial.enableDepthWrite = false;
+        skyboxMaterial.name = "skybox";
+        MaterialManager::AddMaterial(skyboxMaterial);
+
+#if IMPORT_MODELS
         ModelImporter modelImporter;
         modelImporter.Import("./Models/cube/cube.gltf", mScene);
         modelImporter.Import("./Models/City/scene.gltf", mScene);
 
         std::shared_ptr<Material> skyboxMaterial = std::make_shared<Material>();
-        skyboxMaterial->shader = ShaderManager::Load("Shaders/skybox.vert.spv", "Shaders/skybox.frag.spv");
+        skyboxMaterial->shader = ShaderManager::Load("Shaders/skybox.vert.spv",
+                                                     "Shaders/skybox.frag.spv");
         skyboxMaterial->cullMode = CullMode::None;
         skyboxMaterial->enableDepthTest = false;
         skyboxMaterial->enableDepthWrite = false;
         skyboxMaterial->name = "skybox";
 
         Entity skyboxEntity = mScene.GetEntityByName("Cube");
-        MeshRendererComponent &meshRenderer = skyboxEntity.GetComponent<MeshRendererComponent>();
+        MeshRendererComponent &meshRenderer =
+            skyboxEntity.GetComponent<MeshRendererComponent>();
         meshRenderer.material = MaterialManager::AddMaterial(skyboxMaterial);
+
+        FontManager::Load("Fonts/GoogleSans-Regular.ttf");
+
+#endif
 
         Light::Initialize();
 
-        mEditorUi.Initialize(Renderer::mSceneResolveAttachment, GetWindow(), mSurface);
+#if ENABLE_EDITOR
+        mEditorUi.Initialize(Renderer::mSceneResolveAttachment, GetWindow(),
+                             mSurface);
         mEditorUi.SetScene(mScene);
 
-        TextRenderer::Initialize();
+#endif
 
-        FontID id = FontManager::Load("Fonts/Orbitron-Regular.ttf", 128);
-
-        mTextEntity = mScene.CreateEntity("Text");
-        mTextEntity.AddComponent<Transform>();
-        auto &text = mTextEntity.AddComponent<TextComponent>();
-        text.text = "Hello world";
-        text.fontId = id;
+        // mTextEntity.GetComponent<TextComponent>().text = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ ";
     }
-
-    Entity mTextEntity;
 
     void OnWindowResize(const glm::uvec2 &size) override
     {
@@ -109,8 +111,6 @@ class Editor : public Application
         mController.Update();
         mCamera.Calculate();
 
-        mTextEntity.GetComponent<TextComponent>().text = std::to_string(GetFps());
-
         TextRenderer::SetCamera(mCamera);
 
         Renderer::BeginLightPlacement();
@@ -129,14 +129,17 @@ class Editor : public Application
 
         Renderer::BeginFrame(mCamera);
 
-        for (const auto &[entity, component] : mScene.GetEntities<MeshRendererComponent>())
+        for (const auto &[entity, component] :
+             mScene.GetEntities<MeshRendererComponent>())
         {
-            if (component.material == (MaterialID)UINT64_MAX || component.mesh == (MeshID)UINT64_MAX)
+            if (component.material == (MaterialID)UINT64_MAX ||
+                component.mesh == (MeshID)UINT64_MAX)
             {
                 continue;
             }
 
-            Renderer::Submit(component.material, component.mesh, entity.GetComponent<Transform>());
+            Renderer::Submit(component.material, component.mesh,
+                             entity.GetComponent<Transform>());
         }
 
         for (const auto &[entity, textComponent] : mScene.GetEntities<TextComponent>())
@@ -146,7 +149,7 @@ class Editor : public Application
                 continue;
             }
 
-            TextRenderer::DrawText(FontManager::GetFont(textComponent.fontId), textComponent.text, textComponent.spacing, textComponent.color, entity.GetComponent<Transform>());
+            TextRenderer::DrawText(textComponent.fontId, textComponent.text, textComponent.spacing, textComponent.forgroundColor, textComponent.backgroundColor, entity.GetComponent<Transform>());
         }
 
         TextRenderer::Flush();
@@ -155,17 +158,25 @@ class Editor : public Application
 
         RenderUI();
 
+#if ENABLE_EDITOR
         Present();
+#else
+        HideCursor();
+        Renderer::Present(mSurface);
+#endif
     }
 
     void RenderUI()
     {
+#if ENABLE_EDITOR
         mEditorUi.OnRender(mCamera, mController);
+#endif
     }
 
     void Present()
     {
-        uint32_t imageIndex = mSurface.swapchain.GetNextImageIndex(Renderer::mImageAcquiredSemaphore, {});
+        uint32_t imageIndex = mSurface.swapchain.GetNextImageIndex(
+            Renderer::mImageAcquiredSemaphore, {});
         if (imageIndex == UINT32_MAX)
         {
             return;
@@ -182,13 +193,16 @@ class Editor : public Application
                 .maxDepth = 1.f,
             };
 
-        VkRect2D scissor =
-            {
-                .extent = {(uint32_t)viewport.width, (uint32_t)viewport.height},
-            };
+        VkRect2D scissor = {
+            .extent = {(uint32_t)viewport.width, (uint32_t)viewport.height},
+        };
 
-        VkDescriptorSet descriptorSets[] = {Renderer::mPresentInputDescriptor.GetDescriptorSet()};
-        vkCmdBindDescriptorSets(Renderer::mPresentCommandBuffer.GetHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS, Renderer::mPresentPipeline.GetPipelineLayout(), 0, 1, descriptorSets, 0, nullptr);
+        VkDescriptorSet descriptorSets[] = {
+            Renderer::mPresentInputDescriptor.GetDescriptorSet()};
+        vkCmdBindDescriptorSets(Renderer::mPresentCommandBuffer.GetHandle(),
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                Renderer::mPresentPipeline.GetPipelineLayout(), 0,
+                                1, descriptorSets, 0, nullptr);
         Renderer::mPresentPipeline.CmdBindPipeline(Renderer::mPresentCommandBuffer);
 
         vkCmdSetViewport(Renderer::mPresentCommandBuffer.GetHandle(), 0, 1, &viewport);
@@ -204,8 +218,14 @@ class Editor : public Application
 
         Renderer::mPresentCommandBuffer.QueueSubmit(GraphicsContext::GetQueues().graphics, Renderer::mImageAcquiredSemaphore, Renderer::mSwapchainRenderFinished, PipelineStage::ColorAttachmentOutput);
 
-        VkSwapchainKHR swapchain[] = {mSurface.swapchain.GetHandle()};
-        VkSemaphore waitSemaphores[] = {Renderer::mSwapchainRenderFinished.GetHandle()};
+        VkSwapchainKHR swapchain[] =
+            {
+                mSurface.swapchain.GetHandle(),
+            };
+        VkSemaphore waitSemaphores[] =
+            {
+                Renderer::mSwapchainRenderFinished.GetHandle(),
+            };
 
         VkPresentInfoKHR presentInfo =
             {
@@ -226,6 +246,7 @@ class Editor : public Application
     {
         SceneSerializer serializer;
         serializer.Export("test.json", mScene);
+        Light::Terminate();
         TextRenderer::Terminate();
     }
 };

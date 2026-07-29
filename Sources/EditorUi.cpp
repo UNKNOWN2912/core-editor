@@ -1,10 +1,7 @@
 #include "EditorUi.hpp"
-#include "EntityComponentSystem/Component.hpp"
-#include "Renderer/TextRenderer.hpp"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
 #include "misc/cpp/imgui_stdlib.h"
-#include <Core/Application.hpp>
 #include <filesystem>
 #include <format>
 
@@ -75,41 +72,15 @@ const char *const imguiColorName[] =
         "ImGuiCol_ModalWindowDimBg",
 };
 
-struct FileDialogOpenFileConfig
+bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory, std::string &file, bool *opened, const FileDialogOpenFileConfig &config)
 {
-};
-
-struct FileDialogOpenDirectoryConfig
-{
-};
-
-struct WidgetData
-{
-    bool opened = false;
-    std::filesystem::path currentDirectory;
-    std::filesystem::path selectedPath;
-};
-
-class FileDialog
-{
-public:
-    bool OpenFile(std::string_view label, std::string_view rootDirectory, std::string &file, const FileDialogOpenFileConfig &config = {});
-    bool OpenDirectory(std::string_view label, std::string_view rootDirectory, std::string &directory, const FileDialogOpenDirectoryConfig &config = {});
-
-private:
-    std::unordered_map<std::string, WidgetData> mData;
-};
-
-bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory, std::string &file, const FileDialogOpenFileConfig &config)
-{
-
     WidgetData &data = mData[label.data()];
     if (data.opened)
     {
     }
     else
     {
-        if (rootDirectory == ".")
+        if (rootDirectory == "." || rootDirectory == "" || rootDirectory == "./")
         {
             data.currentDirectory = std::filesystem::current_path();
         }
@@ -119,7 +90,7 @@ bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory
         }
     }
 
-    ImGui::Begin(label.data());
+    ImGui::Begin(label.data(), opened);
     ImGui::Text("dir: %s", data.currentDirectory.c_str());
 
     if (ImGui::Selectable(".."))
@@ -128,7 +99,25 @@ bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory
     }
 
     std::string typeString = "F: ";
+
+    std::vector<std::filesystem::directory_entry> entries;
+
     for (const auto &entry : std::filesystem::directory_iterator(data.currentDirectory))
+    {
+        if (!entry.is_directory())
+            continue;
+
+        entries.push_back(entry);
+    }
+    for (const auto &entry : std::filesystem::directory_iterator(data.currentDirectory))
+    {
+        if (entry.is_directory())
+            continue;
+
+        entries.push_back(entry);
+    }
+
+    for (const auto &entry : entries)
     {
         typeString = "F: ";
         if (entry.is_directory())
@@ -166,9 +155,9 @@ bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory
     return false;
 }
 
-bool FileDialog::OpenDirectory(std::string_view label, std::string_view rootDirectory, std::string &directory, const FileDialogOpenDirectoryConfig &config)
+bool FileDialog::OpenDirectory(std::string_view label, std::string_view rootDirectory, std::string &directory, bool *opened, const FileDialogOpenDirectoryConfig &config)
 {
-    ImGui::Begin(label.data());
+    ImGui::Begin(label.data(), opened);
 
     ImGui::End();
 }
@@ -186,7 +175,7 @@ void EditorUI::Initialize(const ImageDeprecated &sceneImage, const Window &windo
     ImGui::CreateContext();
 
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    ImGui::GetIO().Fonts->AddFontFromFileTTF("Fonts/GoogleSans-Regular.ttf", 16);
+    ImGui::GetIO().Fonts->AddFontFromFileTTF("Fonts/GoogleSans-Regular.ttf", 18);
 
     {
         FILE *fp = fopen("style.bin", "rb");
@@ -215,7 +204,10 @@ void EditorUI::Initialize(const ImageDeprecated &sceneImage, const Window &windo
 
     ImGui_ImplVulkan_Init(&initInfo);
 
-    mGameViewTexture = ImGui_ImplVulkan_AddTexture(sceneImage.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    ImageView view;
+    view.CreateImageView(sceneImage, ViewType::TwoDimensional, ImageAspect::Color, 0, 1, 0, 1, {ComponentSwizzle::R, ComponentSwizzle::G, ComponentSwizzle::B, ComponentSwizzle::One});
+
+    mGameViewTexture = ImGui_ImplVulkan_AddTexture(view.GetHandle(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     mImageViewTexture = ImGui_ImplVulkan_AddTexture(sceneImage.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     mViewImages.emplace_back(sceneImage.view, sceneImage.size);
@@ -274,10 +266,12 @@ void EditorUI::TextureSelector(std::string_view label, TextureID &textureId)
 
     for (const auto &[id, texture] : TextureManager::GetMap())
     {
+        ImGui::PushID((uint64_t)id);
         if (ImGui::Selectable(texture->GetName().c_str(), id == textureId))
         {
             textureId = id;
         }
+        ImGui::PopID();
     }
     ImGui::EndCombo();
 }
@@ -321,12 +315,13 @@ void EditorUI::OnRender(Camera &camera, CameraController &controller)
     ImGui::DockSpaceOverViewport();
 
     MainMenuBar();
-    BezierView();
-    StyleEditor();
+    StyleEditorPanel();
     ValuePanel(camera);
-    GameView(camera, controller);
+    GameViewPanel(camera, controller);
     PropertyPanel();
     EntityPanel();
+    ModelImporterPanel();
+    ImageImporterPanel();
 
     ImGui::Render();
 }
@@ -347,13 +342,20 @@ void EditorUI::EntityPanel()
         ImGui::InputText("Name", &mEntityName);
         if (ImGui::Button("Create"))
         {
-            mScene->CreateEntity(mEntityName).AddComponent<Transform>();
+            Entity entity = mScene->CreateEntity(mEntityName);
+            entity.AddComponent<Transform>();
+            entity.GetComponent<EntityMetadata>().enableSerializing = true;
         }
         ImGui::EndPopup();
     }
 
     for (const auto &[entity, component] : mScene->GetEntities<EntityMetadata>())
     {
+        if (!component.enableSerializing)
+        {
+            continue;
+        }
+
         ImGui::PushID((int)entity.GetId());
         if (ImGui::Selectable(component.name.c_str(), mSelectedEntity.GetId() == entity.GetId()))
         {
@@ -392,6 +394,10 @@ void EditorUI::PropertyPanel()
             ImGui::EndPopup();
         }
 
+        Button("Delete", [&] {
+            mSelectedEntity.GetComponent<EntityMetadata>().enableSerializing = false;
+        });
+
         TransformController();
         MeshRendererController();
         LightController();
@@ -420,7 +426,22 @@ void EditorUI::ValuePanel(Camera &camera)
 
     ImGui::SeparatorText("Text Renderer");
 
+    ImGui::SliderInt("Text Mode", &TextRenderer::GetPushConstant().mode, 0, 10);
+
     ImGui::End();
+}
+
+void EditorUI::ModelImporterPanel()
+{
+    if (!mEnableModelImporter)
+        return;
+
+    std::string filename;
+    if (mFileDialog.OpenFile("Import Model", "", filename, &mEnableModelImporter))
+    {
+        ModelImporter importer;
+        importer.Import(filename.c_str(), *mScene);
+    }
 }
 
 ImVec2 glmVec2toImVec2(const glm::vec2 &value)
@@ -439,95 +460,7 @@ glm::vec2 QuadraticBezierCurve(const glm::vec2 &p0, const glm::vec2 &p1, const g
     return result;
 }
 
-void EditorUI::BezierView()
-{
-    ImGui::Begin("Bezier view");
-    ImDrawList *drawList = ImGui::GetWindowDrawList();
-
-    FontID id = FontID(0);
-    const Font &font = FontManager::GetFont(id);
-    const Glyph &glyph = font.GetGlyph('C');
-    float scale = 1000.f;
-
-    // for (int i = 0; i < glyph.contours.size(); i++)
-    // {
-    //     for (int j = 0; j < glyph.contours[i].points.size(); j++)
-    //     {
-    //         glm::vec2 p0 = ((glyph.contours[i].points[j].position / glyph.pixelSize) * scale) + glm::vec2(100.f) + glm::vec2(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y);
-    //         drawList->AddCircleFilled(glmVec2toImVec2(p0), 5, IM_COL32(255, 255, 255, 255));
-    //     }
-    // }
-
-    for (int i = 0; i < glyph.contours.size(); i++)
-    {
-        const Contour &contour = glyph.contours[i];
-
-        for (int c = 1; c < contour.points.size(); c++)
-        {
-            glm::vec2 p0 = glm::vec2(0);
-            glm::vec2 p1 = glm::vec2(0);
-            glm::vec2 p2 = glm::vec2(0);
-            // on on
-            if (contour.points[c - 1].control == ContourPointType::On && contour.points[c].control == ContourPointType::On)
-            {
-                p0 = ((contour.points[c - 1].position / glyph.pixelSize) * scale) + glm::vec2(100.f) + glm::vec2(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y);
-                p2 = ((contour.points[c].position / glyph.pixelSize) * scale) + glm::vec2(100.f) + glm::vec2(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y);
-                p1 = glm::mix(p0, p2, 0.5);
-
-                // drawList->AddBezierQuadratic(glmVec2toImVec2(p0), glmVec2toImVec2(p1), glmVec2toImVec2(p2), IM_COL32(255, 255, 255, 255), 0.3);
-
-                for (int k = 0; k <= count; k++)
-                {
-                    glm::vec2 m = QuadraticBezierCurve(p0, p1, p2, float(k) / float(count));
-                    drawList->AddCircleFilled(glmVec2toImVec2(m), 5.f, IM_COL32_WHITE);
-                }
-            }
-            // on quadratic on
-            else if (contour.points[c - 1].control == ContourPointType::On && contour.points[c].control == ContourPointType::Quadratic && contour.points[c + 1].control == ContourPointType::On)
-            {
-                p0 = ((contour.points[c - 1].position / glyph.pixelSize) * scale) + glm::vec2(100.f) + glm::vec2(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y);
-                p2 = ((contour.points[c + 1].position / glyph.pixelSize) * scale) + glm::vec2(100.f) + glm::vec2(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y);
-                p1 = glm::mix(p0, p2, 0.5);
-                // p1 = ((contour.points[c].position / glyph.pixelSize) * scale) + glm::vec2(100.f) + glm::vec2(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y);
-
-                // drawList->AddBezierQuadratic(glmVec2toImVec2(p0), glmVec2toImVec2(p1), glmVec2toImVec2(p2), IM_COL32(255, 255, 255, 255), 0.3);
-                for (int k = 0; k <= count; k++)
-                {
-                    glm::vec2 m = QuadraticBezierCurve(p0, p1, p2, float(k) / float(count));
-                    drawList->AddCircleFilled(glmVec2toImVec2(m), 5.f, IM_COL32_WHITE);
-                }
-            }
-            // quadratic quadratic
-            else if (contour.points[c - 1].control == ContourPointType::Quadratic && contour.points[c].control == ContourPointType::Quadratic)
-            {
-                p0 = ((contour.points[c - 1].position / glyph.pixelSize) * scale) + glm::vec2(100.f) + glm::vec2(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y);
-                p2 = ((contour.points[c].position / glyph.pixelSize) * scale) + glm::vec2(100.f) + glm::vec2(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y);
-                p1 = glm::mix(p0, p2, 0.5);
-                // drawList->AddBezierQuadratic(glmVec2toImVec2(p0), glmVec2toImVec2(p1), glmVec2toImVec2(p2), IM_COL32(255, 255, 255, 255), 0.3);
-                for (int k = 0; k <= count; k++)
-                {
-                    glm::vec2 m = QuadraticBezierCurve(p0, p1, p2, float(k) / float(count));
-                    drawList->AddCircleFilled(glmVec2toImVec2(m), 5.f, IM_COL32_WHITE);
-                }
-            }
-        }
-
-        uint32_t secondLastPos = contour.points.size() - 1;
-        uint32_t lastPos = 0;
-        if (contour.points[secondLastPos].control == ContourPointType::On && contour.points[lastPos].control == ContourPointType::On)
-        {
-            glm::vec2 p0 = ((contour.points[secondLastPos].position / glyph.pixelSize) * scale) + glm::vec2(100.f) + glm::vec2(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y);
-            glm::vec2 p2 = ((contour.points[lastPos].position / glyph.pixelSize) * scale) + glm::vec2(100.f) + glm::vec2(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y);
-            glm::vec2 p1 = glm::mix(p0, p2, 0.5);
-            drawList->AddBezierQuadratic(glmVec2toImVec2(p0), glmVec2toImVec2(p1), glmVec2toImVec2(p2), IM_COL32(255, 255, 255, 255), 0.3);
-        }
-    }
-    ImGui::SliderInt("Count", &count, 0, 20);
-
-    ImGui::End();
-}
-
-void EditorUI::GameView(Camera &camera, CameraController &controller)
+void EditorUI::GameViewPanel(Camera &camera, CameraController &controller)
 {
     ImGui::Begin("Game view");
     ImVec2 size = ImGui::GetContentRegionAvail();
@@ -550,7 +483,7 @@ void EditorUI::GameView(Camera &camera, CameraController &controller)
     ImGui::End();
 }
 
-void EditorUI::StyleEditor()
+void EditorUI::StyleEditorPanel()
 {
     ImGui::Begin("Style Editor");
     if (ImGui::Button("Save"))
@@ -576,6 +509,19 @@ void EditorUI::StyleEditor()
 
     ImGui::End();
 }
+
+void EditorUI::ImageImporterPanel()
+{
+    if (!mEnableImageImporter)
+        return;
+
+    std::string filename;
+    if (mFileDialog.OpenFile("Import Image", "", filename, &mEnableImageImporter))
+    {
+        TextureManager::LoadTexture(filename);
+    }
+}
+
 void EditorUI::TransformController()
 {
     if (!mSelectedEntity.HasComponent<Transform>())
@@ -622,7 +568,8 @@ void EditorUI::TextComponentController()
     ImGui::InputText("Text", &component.text);
     component.spacing = DragFloat("Spacing", component.spacing, 0.01f);
     FontSelector("Font", component.fontId);
-    ImGui::ColorEdit4("Color", &component.color.x);
+    ImGui::ColorEdit4("Forground", &component.forgroundColor.x);
+    ImGui::ColorEdit4("Background", &component.backgroundColor.x);
 
     ImGui::PopID();
 }
@@ -639,24 +586,30 @@ void EditorUI::MeshRendererController()
     ImGui::SeparatorText("Mesh Renderer");
 
     std::shared_ptr<Mesh> cMesh = MeshManager::GetMesh(component.mesh);
-    std::shared_ptr<Material> cMaterial = MaterialManager::GetMaterial(component.material);
+    Material cMaterial;
+    if (MaterialManager::HasMaterial(component.material))
+    {
+        cMaterial = MaterialManager::GetMaterial(component.material);
+    }
 
-    if (ImGui::BeginCombo("Material", std::format("{} {}", (uint64_t)component.material, (cMaterial != nullptr) ? cMaterial->name : "None").c_str()))
+    if (ImGui::BeginCombo("Material", std::format("{}", MaterialManager::HasMaterial(component.material) ? cMaterial.name : "None").c_str()))
     {
         for (const auto &[id, material] : MaterialManager::GetMap())
         {
             ImGui::PushID((int)id);
-            if (ImGui::Selectable(material->name.c_str(), id == component.material))
+
+            if (ImGui::Selectable(material.name.c_str(), id == component.material))
             {
                 component.material = id;
             }
+
             ImGui::PopID();
         }
 
         ImGui::EndCombo();
     }
 
-    if (ImGui::BeginCombo("Mesh", std::format("{} {}", (uint64_t)component.mesh, (cMesh != nullptr) ? cMesh->GetName() : "None").c_str()))
+    if (ImGui::BeginCombo("Mesh", std::format("{}", (cMesh != nullptr) ? cMesh->GetName() : "None").c_str()))
     {
         for (const auto &[id, mesh] : MeshManager::GetMap())
         {
@@ -673,21 +626,21 @@ void EditorUI::MeshRendererController()
         ImGui::EndCombo();
     }
 
-    if (component.material != (MaterialID)UINT64_MAX)
+    if (MaterialManager::HasMaterial(component.material))
     {
-        std::shared_ptr<Material> cMaterial = MaterialManager::GetMaterial(component.material);
+        Material &cMaterial = MaterialManager::GetMaterial(component.material);
 
         ImGui::SeparatorText("Material");
 
-        ImGui::InputText("Name", &cMaterial->name);
+        ImGui::InputText("Name", &cMaterial.name);
 
-        ImGui::SliderFloat("Roughness", &cMaterial->roughnessFactor, 0.1f, 1.f);
-        ImGui::SliderFloat("Metallic", &cMaterial->metallicFactor, 0.01f, 1.f);
-        ImGui::ColorEdit4("Color", &cMaterial->colorFactor.x);
+        ImGui::SliderFloat("Roughness", &cMaterial.roughnessFactor, 0.1f, 1.f);
+        ImGui::SliderFloat("Metallic", &cMaterial.metallicFactor, 0.01f, 1.f);
+        ImGui::ColorEdit4("Color", &cMaterial.colorFactor.x);
 
-        TextureSelector("Albedo Texture", cMaterial->albedo);
-        TextureSelector("Roughness Texture", cMaterial->roughness);
-        TextureSelector("Metallic Texture", cMaterial->metallic);
+        TextureSelector("Albedo Texture", cMaterial.albedoTexture);
+        TextureSelector("Roughness Texture", cMaterial.roughnessTexture);
+        TextureSelector("Metallic Texture", cMaterial.metallicTexture);
 
         const char *cullModeString[] =
             {
@@ -696,13 +649,13 @@ void EditorUI::MeshRendererController()
                 "Back",
             };
 
-        if (ImGui::BeginCombo("Cull mode", cullModeString[(uint64_t)cMaterial->cullMode]))
+        if (ImGui::BeginCombo("Cull mode", cullModeString[(uint64_t)cMaterial.cullMode]))
         {
             for (int i = 0; i < 3; i++)
             {
-                if (ImGui::Selectable(cullModeString[i], (uint64_t)cMaterial->cullMode == i))
+                if (ImGui::Selectable(cullModeString[i], (uint64_t)cMaterial.cullMode == i))
                 {
-                    cMaterial->cullMode = (CullMode)i;
+                    cMaterial.cullMode = (CullMode)i;
                 }
             }
             ImGui::EndCombo();
@@ -767,7 +720,13 @@ void EditorUI::MainMenuBar()
 
     if (ImGui::BeginMenu("View"))
     {
-        MenuItem("Texture Manager", [&]() { mEnableImageImporter = true; });
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Assets"))
+    {
+        MenuItem("Import Model", [&]() { mEnableModelImporter = true; });
+        MenuItem("Import Image", [&]() { mEnableImageImporter = true; });
         ImGui::EndMenu();
     }
 
@@ -816,18 +775,11 @@ void EditorUI::HideCursor()
     Application::GetInstance()->HideCursor();
 }
 
-void EditorUI::Button(std::string_view label, const std::function<void()> &onClick, const std::function<void()> &onDoubleClick)
+void EditorUI::Button(std::string_view label, const std::function<void()> &onClick)
 {
-    if (ImGui::Button(label.data()))
+    if (ImGui::Button(label.data(), ImVec2(0, 0)))
     {
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && onClick != nullptr)
-        {
-            onClick();
-        }
-        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && onDoubleClick != nullptr)
-        {
-            onDoubleClick();
-        }
+        onClick();
     }
 }
 
