@@ -61,7 +61,7 @@ private:
     void SetImageForViewer(VkImageView view);
     void SetColor(const ImGuiStyle &style);
     void ShowCursor();
-    void HideCursor();
+    void DisableCursor();
 
     void Button(std::string_view label, const std::function<void()> &onClick);
     void MenuItem(std::string_view label, const std::function<void()> &callback);
@@ -71,8 +71,8 @@ private:
     float DragFloat(std::string_view name, float initialValue, float speed = 1.f);
     glm::vec3 ColorEdit3(std::string_view name, const glm::vec3 &initialValue);
 
-    void TextureSelector(std::string_view label, TextureID &textureId);
-    void FontSelector(std::string_view label, FontID &fontId);
+    void TextureSelector(std::string_view label, std::string_view textureId);
+    void FontSelector(std::string_view label, std::string &fontId);
 
 private:
     ImGuiStyle mEditingStyle;
@@ -82,6 +82,8 @@ private:
     std::string mEntityName;
     Scene *mScene;
     Entity mSelectedEntity;
+
+    bool mDisableCursor = false;
 
     FileDialog mFileDialog;
 
