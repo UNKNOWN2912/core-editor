@@ -1,4 +1,5 @@
 #include "EditorUi.hpp"
+#include "EntityComponentSystem/Component.hpp"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
 #include "misc/cpp/imgui_stdlib.h"
@@ -219,7 +220,7 @@ glm::vec3 EditorUI::DragFloat3(std::string_view name, const glm::vec3 &initialVa
     ImGui::DragFloat3(name.data(), &v.x, speed);
     if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) && ImGui::IsItemActive())
     {
-        HideCursor();
+        DisableCursor();
     }
     return v;
 }
@@ -229,7 +230,7 @@ void EditorUI::DragFloat3(std::string_view name, glm::vec3 &value, float speed)
     ImGui::DragFloat3(name.data(), &value.x, speed);
     if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) && ImGui::IsItemActive())
     {
-        HideCursor();
+        DisableCursor();
     }
 }
 
@@ -239,7 +240,7 @@ float EditorUI::DragFloat(std::string_view name, float initialValue, float speed
     ImGui::DragFloat(name.data(), &v, speed);
     if (ImGui::IsItemActive())
     {
-        HideCursor();
+        DisableCursor();
     }
     return v;
 }
@@ -251,12 +252,12 @@ glm::vec3 EditorUI::ColorEdit3(std::string_view name, const glm::vec3 &initialVa
     return v;
 }
 
-void EditorUI::TextureSelector(std::string_view label, TextureID &textureId)
+void EditorUI::TextureSelector(std::string_view label, std::string_view textureId)
 {
     std::string textureName = "None";
     if (TextureManager::HasTexture(textureId))
     {
-        textureName = TextureManager::GetTexture(textureId)->GetName();
+        textureName = TextureManager::GetTexture(textureId).GetName();
     }
 
     if (!ImGui::BeginCombo(label.data(), textureName.c_str()))
@@ -266,17 +267,15 @@ void EditorUI::TextureSelector(std::string_view label, TextureID &textureId)
 
     for (const auto &[id, texture] : TextureManager::GetMap())
     {
-        ImGui::PushID((uint64_t)id);
-        if (ImGui::Selectable(texture->GetName().c_str(), id == textureId))
+        if (ImGui::Selectable(id.data(), id == textureId))
         {
             textureId = id;
         }
-        ImGui::PopID();
     }
     ImGui::EndCombo();
 }
 
-void EditorUI::FontSelector(std::string_view label, FontID &fontId)
+void EditorUI::FontSelector(std::string_view label, std::string &fontId)
 {
     std::string fontName = "None";
     if (FontManager::HasFont(fontId))
@@ -349,20 +348,15 @@ void EditorUI::EntityPanel()
         ImGui::EndPopup();
     }
 
-    for (const auto &[entity, component] : mScene->GetEntities<EntityMetadata>())
-    {
-        if (!component.enableSerializing)
+    mScene->Each<EntityMetadata>([&](Entity entity, EntityMetadata &metadata) {
+        if (metadata.enableSerializing)
         {
-            continue;
+            if (ImGui::Selectable(metadata.name.c_str(), mSelectedEntity.GetId() == entity.GetId()))
+            {
+                mSelectedEntity = entity;
+            }
         }
-
-        ImGui::PushID((int)entity.GetId());
-        if (ImGui::Selectable(component.name.c_str(), mSelectedEntity.GetId() == entity.GetId()))
-        {
-            mSelectedEntity = entity;
-        }
-        ImGui::PopID();
-    }
+    });
 
     ImGui::End();
 }
@@ -476,8 +470,8 @@ void EditorUI::GameViewPanel(Camera &camera, CameraController &controller)
         controller.EnableKeyboardControl(true);
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Left))
         {
-            HideCursor();
             controller.EnableMouseControl(true);
+            DisableCursor();
         }
     }
     ImGui::End();
@@ -518,7 +512,7 @@ void EditorUI::ImageImporterPanel()
     std::string filename;
     if (mFileDialog.OpenFile("Import Image", "", filename, &mEnableImageImporter))
     {
-        TextureManager::LoadTexture(filename);
+        TextureManager::LoadTexture(filename, filename);
     }
 }
 
@@ -567,7 +561,7 @@ void EditorUI::TextComponentController()
     TextComponent &component = mSelectedEntity.GetComponent<TextComponent>();
     ImGui::InputText("Text", &component.text);
     component.spacing = DragFloat("Spacing", component.spacing, 0.01f);
-    FontSelector("Font", component.fontId);
+    FontSelector("Font", component.font);
     ImGui::ColorEdit4("Forground", &component.forgroundColor.x);
     ImGui::ColorEdit4("Background", &component.backgroundColor.x);
 
@@ -585,42 +579,27 @@ void EditorUI::MeshRendererController()
     MeshRendererComponent &component = mSelectedEntity.GetComponent<MeshRendererComponent>();
     ImGui::SeparatorText("Mesh Renderer");
 
-    std::shared_ptr<Mesh> cMesh = MeshManager::GetMesh(component.mesh);
-    Material cMaterial;
-    if (MaterialManager::HasMaterial(component.material))
-    {
-        cMaterial = MaterialManager::GetMaterial(component.material);
-    }
-
-    if (ImGui::BeginCombo("Material", std::format("{}", MaterialManager::HasMaterial(component.material) ? cMaterial.name : "None").c_str()))
+    if (ImGui::BeginCombo("Material", component.material.c_str()))
     {
         for (const auto &[id, material] : MaterialManager::GetMap())
         {
-            ImGui::PushID((int)id);
-
             if (ImGui::Selectable(material.name.c_str(), id == component.material))
             {
                 component.material = id;
             }
-
-            ImGui::PopID();
         }
 
         ImGui::EndCombo();
     }
 
-    if (ImGui::BeginCombo("Mesh", std::format("{}", (cMesh != nullptr) ? cMesh->GetName() : "None").c_str()))
+    if (ImGui::BeginCombo("Mesh", component.mesh.c_str()))
     {
         for (const auto &[id, mesh] : MeshManager::GetMap())
         {
-            ImGui::PushID((int)id);
-
-            if (ImGui::Selectable(mesh->GetName().c_str(), id == component.mesh))
+            if (ImGui::Selectable(mesh.GetName().c_str(), id == component.mesh))
             {
                 component.mesh = id;
             }
-
-            ImGui::PopID();
         }
 
         ImGui::EndCombo();
@@ -768,11 +747,11 @@ void EditorUI::SetColor(const ImGuiStyle &style)
 
 void EditorUI::ShowCursor()
 {
-    Application::GetInstance()->ShowCursor();
+    Application::GetInstance()->ResetCursor();
 }
-void EditorUI::HideCursor()
+void EditorUI::DisableCursor()
 {
-    Application::GetInstance()->HideCursor();
+    Application::GetInstance()->DisableCursor();
 }
 
 void EditorUI::Button(std::string_view label, const std::function<void()> &onClick)
