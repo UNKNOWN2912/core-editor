@@ -1,4 +1,5 @@
 #pragma once
+
 #include "Core/Window.hpp"
 #include "Input/Keyboard.hpp"
 #include "Input/Mouse.hpp"

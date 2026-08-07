@@ -32,12 +32,14 @@ private:
 class EditorUI
 {
 public:
-    void Initialize(const ImageDeprecated &sceneImage, const Window &window, const Surface &surface);
+    void Initialize(const Window &window, const Surface &surface);
 
     void SetScene(Scene &scene);
     void OnRender(Camera &camera, CameraController &controller);
     void Terminate();
     void AddImages(const Image &image);
+
+    void Present(const Surface &surface);
 
 private:
     void MainMenuBar();
@@ -71,12 +73,11 @@ private:
     float DragFloat(std::string_view name, float initialValue, float speed = 1.f);
     glm::vec3 ColorEdit3(std::string_view name, const glm::vec3 &initialValue);
 
-    void TextureSelector(std::string_view label, std::string_view textureId);
+    void TextureSelector(std::string_view label, std::string& textureId);
     void FontSelector(std::string_view label, std::string &fontId);
 
 private:
     ImGuiStyle mEditingStyle;
-    Surface mSurface;
     VkDescriptorSet mGameViewTexture;
     VkDescriptorSet mImageViewTexture;
     std::string mEntityName;
