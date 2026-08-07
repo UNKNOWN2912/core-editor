@@ -163,9 +163,9 @@ bool FileDialog::OpenDirectory(std::string_view label, std::string_view rootDire
     ImGui::End();
 }
 
-void EditorUI::Initialize(const ImageDeprecated &sceneImage, const Window &window, const Surface &surface)
+void EditorUI::Initialize(const Window &window, const Surface &surface)
 {
-    mSurface = surface;
+    ImageDeprecated sceneImage = Renderer::mSceneResolveAttachment;
     VkDescriptorPool descriptorPool = CreateDescriptorPool({
                                                                {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE},
                                                                {VK_DESCRIPTOR_TYPE_SAMPLER, IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE},
@@ -193,8 +193,8 @@ void EditorUI::Initialize(const ImageDeprecated &sceneImage, const Window &windo
             .QueueFamily = GraphicsContext::GetQueueIndices().graphics,
             .Queue = GraphicsContext::GetQueues().graphics,
             .DescriptorPool = descriptorPool,
-            .MinImageCount = mSurface.swapchain.GetImageCount(),
-            .ImageCount = mSurface.swapchain.GetImageCount(),
+            .MinImageCount = surface.swapchain.GetImageCount(),
+            .ImageCount = surface.swapchain.GetImageCount(),
             .PipelineInfoMain =
                 {
                     .RenderPass = Renderer::GetPresentRenderPass().GetHandle(),
@@ -252,16 +252,23 @@ glm::vec3 EditorUI::ColorEdit3(std::string_view name, const glm::vec3 &initialVa
     return v;
 }
 
-void EditorUI::TextureSelector(std::string_view label, std::string_view textureId)
+void EditorUI::TextureSelector(std::string_view label, std::string& textureId)
 {
-    std::string textureName = "None";
+	std::string textureName = "";
     if (TextureManager::HasTexture(textureId))
     {
         textureName = TextureManager::GetTexture(textureId).GetName();
     }
 
+	ImGui::PushID(label.data());
+
+	if(ImGui::Button("Clear"))
+	{
+		textureId = "";
+	}
     if (!ImGui::BeginCombo(label.data(), textureName.c_str()))
     {
+		ImGui::PopID();
         return;
     }
 
@@ -272,6 +279,9 @@ void EditorUI::TextureSelector(std::string_view label, std::string_view textureI
             textureId = id;
         }
     }
+
+	ImGui::PopID();
+
     ImGui::EndCombo();
 }
 
@@ -681,6 +691,71 @@ void EditorUI::LightController()
 void EditorUI::AddImages(const Image &image)
 {
     mViewImages.emplace_back(image.GetImageView().GetHandle(), image.GetSize());
+}
+
+void EditorUI::Present(const Surface &surface)
+{
+    uint32_t imageIndex = surface.swapchain.GetNextImageIndex(
+        Renderer::mImageAcquiredSemaphore, {});
+    if (imageIndex == UINT32_MAX)
+    {
+        return;
+    }
+
+    Renderer::mPresentCommandBuffer.BeginRecording();
+    Renderer::mPresentRenderPass.CmdBeginRenderPass(Renderer::mPresentCommandBuffer, surface.frameBuffers[imageIndex], surface.swapchain.GetSize(), {{1, 1, 1, 1}});
+
+    VkViewport viewport =
+        {
+            .width = (float)surface.swapchain.GetSize().x,
+            .height = (float)surface.swapchain.GetSize().y,
+            .minDepth = 0.f,
+            .maxDepth = 1.f,
+        };
+
+    VkRect2D scissor = {
+        .extent = {(uint32_t)viewport.width, (uint32_t)viewport.height},
+    };
+
+    VkDescriptorSet descriptorSets[] = {Renderer::mPresentInputDescriptor.GetDescriptorSet()};
+    vkCmdBindDescriptorSets(Renderer::mPresentCommandBuffer.GetHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS, Renderer::mPresentPipeline.GetPipelineLayout(), 0, 1, descriptorSets, 0, nullptr);
+    Renderer::mPresentPipeline.CmdBindPipeline(Renderer::mPresentCommandBuffer);
+
+    vkCmdSetViewport(Renderer::mPresentCommandBuffer.GetHandle(), 0, 1, &viewport);
+    vkCmdSetScissor(Renderer::mPresentCommandBuffer.GetHandle(), 0, 1, &scissor);
+    vkCmdSetCullMode(Renderer::mPresentCommandBuffer.GetHandle(), VK_CULL_MODE_NONE);
+    vkCmdSetDepthTestEnable(Renderer::mPresentCommandBuffer.GetHandle(), false);
+    vkCmdSetDepthWriteEnable(Renderer::mPresentCommandBuffer.GetHandle(), false);
+
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), Renderer::mPresentCommandBuffer.GetHandle());
+
+    Renderer::mPresentRenderPass.CmdEndRenderPass(Renderer::mPresentCommandBuffer);
+    Renderer::mPresentCommandBuffer.EndRecording();
+
+    Renderer::mPresentCommandBuffer.QueueSubmit(GraphicsContext::GetQueues().graphics, Renderer::mImageAcquiredSemaphore, Renderer::mSwapchainRenderFinished, PipelineStage::ColorAttachmentOutput);
+
+    VkSwapchainKHR swapchain[] =
+        {
+            surface.swapchain.GetHandle(),
+        };
+    VkSemaphore waitSemaphores[] =
+        {
+            Renderer::mSwapchainRenderFinished.GetHandle(),
+        };
+
+    VkPresentInfoKHR presentInfo =
+        {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = waitSemaphores,
+            .swapchainCount = 1,
+            .pSwapchains = swapchain,
+            .pImageIndices = &imageIndex,
+        };
+
+    vkQueuePresentKHR(GraphicsContext::GetQueues().graphics, &presentInfo);
+
+    vkDeviceWaitIdle(GraphicsContext::GetDevice());
 }
 
 void EditorUI::MainMenuBar()

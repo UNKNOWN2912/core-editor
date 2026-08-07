@@ -1,6 +1,7 @@
 #include "CameraController.hpp"
 #include "EditorUi.hpp"
-#include "backends/imgui_impl_vulkan.h"
+#include "Maths/Random.hpp"
+#include "Renderer/DebugRenderer.hpp"
 #include <Engine.hpp>
 #include <filesystem>
 
@@ -12,6 +13,7 @@
 
 class Editor : public Application
 {
+
     Surface mSurface;
     Camera mCamera;
     CameraController mController;
@@ -19,9 +21,11 @@ class Editor : public Application
 #if ENABLE_EDITOR
     EditorUI mEditorUi;
 #endif
-    std::string mIdShader;
 
+    std::string mIdShader;
     std::shared_ptr<Mesh> mBillboard = std::make_shared<Mesh>();
+
+    DebugRenderer mDebugRenderer;
 
     void OnInitialize() override
     {
@@ -32,6 +36,7 @@ class Editor : public Application
         Renderer::SetSampleCount(SampleCount::One);
         Renderer::SetResolution({3840, 2160});
     }
+
     void OnStart() override
     {
         mCamera.SetFov(90.f);
@@ -42,8 +47,7 @@ class Editor : public Application
         GetWindow().SetTitle("Editor");
         GetWindow().SetFullscreen(true);
 
-        Renderer::SetBasicShader(ShaderManager::GetBuiltinIdentifier().pbr, "Shaders/physical.vert.spv",
-                                 "Shaders/physical.frag.spv");
+        Renderer::SetBasicShader(ShaderManager::GetBuiltinIdentifier().pbr, "Shaders/physical.vert.spv", "Shaders/physical.frag.spv");
 
         TextRenderer::Initialize();
 
@@ -53,21 +57,23 @@ class Editor : public Application
             serializer.Import("test.json", mScene);
         }
 
+        FontManager::Load("Fonts/GoogleSans-Regular.ttf", "MainFont");
+        Light::Initialize();
+
 #if IMPORT_MODELS
         ModelImporter modelImporter;
         modelImporter.Import("./Models/Cube/Cube.gltf", mScene);
         modelImporter.Import("./Models/Sponza/Sponza.gltf", mScene);
 #endif
-
-        FontManager::Load("Fonts/GoogleSans-Regular.ttf", "MainFont");
-        Light::Initialize();
-
 #if ENABLE_EDITOR
-        mEditorUi.Initialize(Renderer::mSceneResolveAttachment, GetWindow(),
+        mEditorUi.Initialize(GetWindow(),
                              mSurface);
         mEditorUi.SetScene(mScene);
-
 #endif
+
+        mDebugRenderer.Initialize();
+
+        mDebugRenderer.Enable(true);
     }
 
     void OnWindowResize(const glm::uvec2 &size) override
@@ -105,6 +111,9 @@ class Editor : public Application
 
         Renderer::BeginFrame(mCamera);
 
+        mDebugRenderer.DrawRect({0, 0, 0}, {10, 10, 10}, RandomUnitVec3());
+        mDebugRenderer.Flush();
+
         mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
             if (meshRenderer.material.size() != 0 && meshRenderer.mesh.size() != 0)
             {
@@ -133,7 +142,7 @@ class Editor : public Application
         RenderUI();
 
 #if ENABLE_EDITOR
-        Present();
+        mEditorUi.Present(mSurface);
 #else
         DisableCursor();
         Renderer::Present(mSurface);
@@ -145,71 +154,6 @@ class Editor : public Application
 #if ENABLE_EDITOR
         mEditorUi.OnRender(mCamera, mController);
 #endif
-    }
-
-    void Present()
-    {
-        uint32_t imageIndex = mSurface.swapchain.GetNextImageIndex(
-            Renderer::mImageAcquiredSemaphore, {});
-        if (imageIndex == UINT32_MAX)
-        {
-            return;
-        }
-
-        Renderer::mPresentCommandBuffer.BeginRecording();
-        Renderer::mPresentRenderPass.CmdBeginRenderPass(Renderer::mPresentCommandBuffer, mSurface.frameBuffers[imageIndex], mSurface.swapchain.GetSize(), {{1, 1, 1, 1}});
-
-        VkViewport viewport =
-            {
-                .width = (float)mSurface.swapchain.GetSize().x,
-                .height = (float)mSurface.swapchain.GetSize().y,
-                .minDepth = 0.f,
-                .maxDepth = 1.f,
-            };
-
-        VkRect2D scissor = {
-            .extent = {(uint32_t)viewport.width, (uint32_t)viewport.height},
-        };
-
-        VkDescriptorSet descriptorSets[] = {Renderer::mPresentInputDescriptor.GetDescriptorSet()};
-        vkCmdBindDescriptorSets(Renderer::mPresentCommandBuffer.GetHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS, Renderer::mPresentPipeline.GetPipelineLayout(), 0, 1, descriptorSets, 0, nullptr);
-        Renderer::mPresentPipeline.CmdBindPipeline(Renderer::mPresentCommandBuffer);
-
-        vkCmdSetViewport(Renderer::mPresentCommandBuffer.GetHandle(), 0, 1, &viewport);
-        vkCmdSetScissor(Renderer::mPresentCommandBuffer.GetHandle(), 0, 1, &scissor);
-        vkCmdSetCullMode(Renderer::mPresentCommandBuffer.GetHandle(), VK_CULL_MODE_NONE);
-        vkCmdSetDepthTestEnable(Renderer::mPresentCommandBuffer.GetHandle(), false);
-        vkCmdSetDepthWriteEnable(Renderer::mPresentCommandBuffer.GetHandle(), false);
-
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), Renderer::mPresentCommandBuffer.GetHandle());
-
-        Renderer::mPresentRenderPass.CmdEndRenderPass(Renderer::mPresentCommandBuffer);
-        Renderer::mPresentCommandBuffer.EndRecording();
-
-        Renderer::mPresentCommandBuffer.QueueSubmit(GraphicsContext::GetQueues().graphics, Renderer::mImageAcquiredSemaphore, Renderer::mSwapchainRenderFinished, PipelineStage::ColorAttachmentOutput);
-
-        VkSwapchainKHR swapchain[] =
-            {
-                mSurface.swapchain.GetHandle(),
-            };
-        VkSemaphore waitSemaphores[] =
-            {
-                Renderer::mSwapchainRenderFinished.GetHandle(),
-            };
-
-        VkPresentInfoKHR presentInfo =
-            {
-                .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-                .waitSemaphoreCount = 1,
-                .pWaitSemaphores = waitSemaphores,
-                .swapchainCount = 1,
-                .pSwapchains = swapchain,
-                .pImageIndices = &imageIndex,
-            };
-
-        vkQueuePresentKHR(GraphicsContext::GetQueues().graphics, &presentInfo);
-
-        vkDeviceWaitIdle(GraphicsContext::GetDevice());
     }
 
     void OnEnd() override

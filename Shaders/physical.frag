@@ -232,26 +232,9 @@ void main()
             float angle = dot(direction, -lightDirection);
             float radius = distance(position, Input.fragPos);
 
-            // float shadow = 1.f;
-            // vec3 fragToLight = Input.fragPos - position;
-            // float currentDepth = length(fragToLight);
-            // vec3 uvs = normalize(fragToLight);
-            // uvs.z *= -1;
-            // float bias = max(0.05 * (1.0 - dot(normal, lightDirection)), 0.005);
-
-            // float closestDepth = texture(shadowMap, uvs).r * 1000.f;
-            // closestDepth = LinearizeDepth(closestDepth, 0.01f, 1000.f);
-
-            // if (currentDepth > closestDepth)
-            // {
-            //     shadow = 0.f;
-            // }
-
             float diffuse = max(dot(lightDirection, normal), 0.0);
             float density = spotLightDensityFunction(intensity, innerAngle, outerAngle, radius, angle);
 
-            // vec3 lit = litFunction(lightDirection, normal, viewDirection, objectColor, color, roughness, metallic);
-            // result += density * lit;
         }
         else if (type == LightType_PointLight)
         {
@@ -308,36 +291,11 @@ void main()
 
             float bias = max(0.005 * (1.0 - dot(normal, lightDirection)), 0.0005);
 
-            if (cascadeIndex <= 2)
+
+            float closestDepth = texture(layeredShadowMap[light.shadowMapIndex], vec3(uv, cascadeIndex)).r;
+            if (currentDepth > closestDepth + bias)
             {
-                float pixelSize = 1 / 1024.f;
-                int size = 2;
-
-                for (int x = -size; x <= size; x++)
-                {
-                    for (int y = -size; y <= size; y++)
-                    {
-                        vec2 offset = uv + vec2(x * pixelSize, y * pixelSize);
-                        offset = offset + (random2(Input.fragPos.xy) * pixelSize);
-                        offset = clamp(offset, vec2(0), vec2(0.998));
-
-                        float closestDepth = texture(layeredShadowMap[light.shadowMapIndex], vec3(offset, cascadeIndex)).r;
-                        if (currentDepth > closestDepth + bias)
-                        {
-                            shadow += 1.f;
-                        }
-                    }
-                }
-
-                shadow /= pow(((2 * size) + 1), 2);
-            }
-            else
-            {
-                float closestDepth = texture(layeredShadowMap[light.shadowMapIndex], vec3(uv, cascadeIndex)).r;
-                if (currentDepth > closestDepth + bias)
-                {
-                    shadow += 1.f;
-                }
+                shadow += 1.f;
             }
 
             result += (BRDF(normal, lightDirection, viewDirection, objectColor, roughness, metallic) * IncomingLight(light.color, light.intensity) * max(dot(normal, lightDirection), 0.0) * (1 - shadow));
