@@ -10,7 +10,8 @@
     std::bind(&callback, this, std::placeholders::_1)
 
 #define ENABLE_EDITOR 1
-#define IMPORT_MODELS 1
+#define ADD_SKYBOX 1
+#define IMPORT_MODELS 0
 
 class Editor : public Application
 {
@@ -61,10 +62,55 @@ class Editor : public Application
         FontManager::Load("Fonts/GoogleSans-Regular.ttf", "MainFont");
         Light::Initialize();
 
+        // clang-format off
+
+        std::vector<Vertex> vertices =
+            {
+                {{ 1.000000, 1.000000 ,-1.000000}, {}, {}, {}, {}},
+                {{ 1.000000, -1.000000 ,-1.000000}, {}, {}, {}, {}},
+                {{ 1.000000, 1.000000, 1.000000}, {}, {}, {}, {}},
+                {{ 1.000000, -1.000000, 1.000000}, {}, {}, {}, {}},
+                {{ -1.000000, 1.000000 ,-1.000000}, {}, {}, {}, {}},
+                {{ -1.000000, -1.000000 ,-1.000000}, {}, {}, {}, {}},
+                {{ -1.000000, 1.000000, 1.000000}, {}, {}, {}, {}},
+                {{ -1.000000, -1.000000, 1.000000}, {}, {}, {}, {}},
+            };
+
+        std::vector<uint32_t> indices = 
+        {
+            5-1, 3-1, 1-1,
+            3-1, 8-1, 4-1,
+            7-1, 6-1, 8-1,
+            2-1, 8-1, 6-1,
+            1-1, 4-1, 2-1,
+            5-1, 2-1, 6-1,
+            5-1, 7-1, 3-1,
+            3-1, 7-1, 8-1,
+            7-1, 5-1, 6-1,
+            2-1, 4-1, 8-1,
+            1-1, 3-1, 4-1,
+            5-1, 1-1, 2-1,
+        };
+
+        MeshManager::CreateMesh(vertices, indices, "cube");
+
+        // clang-format on
+
+#if ADD_SKYBOX
+        Material skyboxMaterial;
+        skyboxMaterial.shader = ShaderManager::Load("skybox", "Shaders/skybox.vert.spv", "Shaders/skybox.frag.spv");
+        skyboxMaterial.cullMode = CullMode::None;
+        skyboxMaterial.enableDepthTest = false;
+        skyboxMaterial.enableDepthWrite = false;
+        skyboxMaterial.name = "skybox";
+        MaterialManager::AddMaterial(skyboxMaterial, "skybox");
+
+#endif
+
 #if IMPORT_MODELS
         ModelImporter modelImporter;
         modelImporter.Import("./Models/Cube/Cube.gltf", mScene);
-        modelImporter.Import("./Models/Sponza/Sponza.gltf", mScene);
+        modelImporter.Import("./Models/Test/test.gltf", mScene);
 #endif
 #if ENABLE_EDITOR
         mEditorUi.Initialize(GetWindow(),
@@ -120,10 +166,12 @@ class Editor : public Application
 
         Renderer::BeginFrame(mCamera);
 
+        Renderer::Submit(MeshManager::GetMesh("cube"), MaterialManager::GetMaterial("skybox"), Transform());
+
         mScene.Each<Light>([&](Entity entity, Light &light) {
-            mDebugRenderer.DrawCircleXY(light.GetPosition(), light.GetIntensity(), light.GetColor());
-            mDebugRenderer.DrawCircleXZ(light.GetPosition(), light.GetIntensity(), light.GetColor());
-            mDebugRenderer.DrawCircleZY(light.GetPosition(), light.GetIntensity(), light.GetColor());
+            mDebugRenderer.DrawCircleXY(light.GetPosition(), 0.5f, light.GetColor());
+            mDebugRenderer.DrawCircleXZ(light.GetPosition(), 0.5f, light.GetColor());
+            mDebugRenderer.DrawCircleZY(light.GetPosition(), 0.5f, light.GetColor());
         });
         mDebugRenderer.Flush();
 

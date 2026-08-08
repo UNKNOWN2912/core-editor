@@ -252,23 +252,24 @@ glm::vec3 EditorUI::ColorEdit3(std::string_view name, const glm::vec3 &initialVa
     return v;
 }
 
-void EditorUI::TextureSelector(std::string_view label, std::string& textureId)
+void EditorUI::TextureSelector(std::string_view label, std::string &textureId)
 {
-	std::string textureName = "";
+    std::string textureName = "";
     if (TextureManager::HasTexture(textureId))
     {
         textureName = TextureManager::GetTexture(textureId).GetName();
     }
 
-	ImGui::PushID(label.data());
+    ImGui::PushID(label.data());
 
-	if(ImGui::Button("Clear"))
-	{
-		textureId = "";
-	}
+    if (ImGui::Button("Clear"))
+    {
+        textureId = "";
+    }
+    ImGui::SameLine();
     if (!ImGui::BeginCombo(label.data(), textureName.c_str()))
     {
-		ImGui::PopID();
+        ImGui::PopID();
         return;
     }
 
@@ -280,9 +281,8 @@ void EditorUI::TextureSelector(std::string_view label, std::string& textureId)
         }
     }
 
-	ImGui::PopID();
-
     ImGui::EndCombo();
+    ImGui::PopID();
 }
 
 void EditorUI::FontSelector(std::string_view label, std::string &fontId)
