@@ -19,7 +19,7 @@ void CameraController::SetCamera(Camera &camera)
         .SetFront(glm::vec3(0.0f))
         .SetPosition(glm::vec3(0.f, 2.f, 2.f))
         .SetNearPlane(0.01f)
-        .SetFarPlane(1000.f);
+        .SetFarPlane(100.f);
 }
 const Camera &CameraController::GetCamera() const
 {

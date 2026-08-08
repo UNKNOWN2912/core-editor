@@ -1,5 +1,6 @@
 #include "CameraController.hpp"
 #include "EditorUi.hpp"
+#include "Maths/Color.hpp"
 #include "Maths/Random.hpp"
 #include "Renderer/DebugRenderer.hpp"
 #include <Engine.hpp>
@@ -33,7 +34,7 @@ class Editor : public Application
         RendererSpecification spec = GetRendererSpecification();
         spec.deviceType = DeviceType::Dedicated;
         SetRendererSpecification(spec);
-        Renderer::SetSampleCount(SampleCount::One);
+        Renderer::SetSampleCount(SampleCount::Four);
         Renderer::SetResolution({3840, 2160});
     }
 
@@ -87,8 +88,16 @@ class Editor : public Application
         {
             Close();
         }
+        if (key == Key::Equal)
+        {
+            lineCount++;
+        }
+        if (key == Key::Minus)
+        {
+            lineCount--;
+        }
     }
-
+    uint32_t lineCount = 0;
     void OnUpdate() override
     {
         mController.Update();
@@ -111,7 +120,11 @@ class Editor : public Application
 
         Renderer::BeginFrame(mCamera);
 
-        mDebugRenderer.DrawRect({0, 0, 0}, {10, 10, 10}, RandomUnitVec3());
+        mScene.Each<Light>([&](Entity entity, Light &light) {
+            mDebugRenderer.DrawCircleXY(light.GetPosition(), light.GetIntensity(), light.GetColor());
+            mDebugRenderer.DrawCircleXZ(light.GetPosition(), light.GetIntensity(), light.GetColor());
+            mDebugRenderer.DrawCircleZY(light.GetPosition(), light.GetIntensity(), light.GetColor());
+        });
         mDebugRenderer.Flush();
 
         mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
