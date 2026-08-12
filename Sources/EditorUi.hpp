@@ -6,10 +6,12 @@
 
 struct FileDialogOpenFileConfig
 {
+    bool showHiddenFiles = false;
 };
 
 struct FileDialogOpenDirectoryConfig
 {
+    bool showHiddenDirectories = false;
 };
 
 struct WidgetData
@@ -27,6 +29,13 @@ public:
 
 private:
     std::unordered_map<std::string, WidgetData> mData;
+};
+
+struct ShaderPath
+{
+    std::string vertexPath;
+    std::string fragmentPath;
+    std::string id;
 };
 
 class EditorUI
@@ -73,8 +82,10 @@ private:
     float DragFloat(std::string_view name, float initialValue, float speed = 1.f);
     glm::vec3 ColorEdit3(std::string_view name, const glm::vec3 &initialValue);
 
-    void TextureSelector(std::string_view label, std::string& textureId);
+    void TextureSelector(std::string_view label, std::string &textureId);
     void FontSelector(std::string_view label, std::string &fontId);
+
+    void ShaderImporter(bool &opened);
 
 private:
     ImGuiStyle mEditingStyle;
@@ -91,6 +102,9 @@ private:
     std::vector<std::pair<VkImageView, glm::uvec2>> mViewImages;
     int mImageIndex = 0;
 
+    ShaderPath mShaderPath;
+
+    bool mEnableShaderImporter = false;
     bool mEnableImageImporter = false;
     bool mEnableModelImporter = false;
 };

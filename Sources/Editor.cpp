@@ -9,7 +9,10 @@
     std::bind(&callback, this, std::placeholders::_1)
 
 #define ENABLE_EDITOR 1
-#define IMPORT_MODELS 1
+#define IMPORT_MODELS 0
+
+#define ENABLE_EXPORT 1
+#define ENABLE_IMPORT 1
 
 class Editor : public Application
 {
@@ -39,6 +42,7 @@ class Editor : public Application
 
     void OnStart() override
     {
+
         mCamera.SetFov(90.f);
         mController.SetSensitivity(0.1f);
         mController.SetCamera(mCamera, GetWindow());
@@ -47,33 +51,39 @@ class Editor : public Application
         GetWindow().SetTitle("Editor");
         GetWindow().SetFullscreen(true);
 
-        Renderer::SetBasicShader(ShaderManager::GetBuiltinIdentifier().pbr, "Shaders/physical.vert.spv", "Shaders/physical.frag.spv");
-
+        Light::Initialize();
         TextRenderer::Initialize();
 
-        if (std::filesystem::exists("./test.json"))
-        {
-            SceneSerializer serializer;
-            serializer.Import("test.json", mScene);
-        }
+#if ENABLE_IMPORT
+        SceneSerializer serializer;
+        serializer.Import("test.json", mScene);
+#endif
 
-        FontManager::Load("Fonts/GoogleSans-Regular.ttf", "MainFont");
-        Light::Initialize();
+        // Renderer::SetBasicShader(ShaderManager::GetBuiltinIdentifier().pbr, "Shaders/physical.vert.spv", "Shaders/physical.frag.spv");
+
+        // if (std::filesystem::exists("./test.json"))
+        // {
+        //     SceneSerializer serializer;
+        //     serializer.Import("test.json", mScene);
+        // }
 
 #if IMPORT_MODELS
+        mScene.GetResourceManager().GetFontManager().Load("Fonts/GoogleSans-Regular.ttf", "MainFont");
+        mScene.GetResourceManager().GetShaderManager().Load("pbr", "Shaders/physical.vert.spv", "Shaders/physical.frag.spv");
         ModelImporter modelImporter;
         modelImporter.Import("./Models/Cube/Cube.gltf", mScene);
-        modelImporter.Import("./Models/Sponza/Sponza.gltf", mScene);
+        modelImporter.Import("./Models/Room/room.gltf", mScene);
 #endif
+
 #if ENABLE_EDITOR
-        mEditorUi.Initialize(GetWindow(),
-                             mSurface);
+        mEditorUi.Initialize(GetWindow(), mSurface);
         mEditorUi.SetScene(mScene);
 #endif
 
         mDebugRenderer.Initialize();
-
         mDebugRenderer.Enable(true);
+
+        mScene.GetResourceManager().GetTextureManager().SetTextureDescriptor(Renderer::GetTextureDescriptor());
     }
 
     void OnWindowResize(const glm::uvec2 &size) override
@@ -111,27 +121,22 @@ class Editor : public Application
 
         Renderer::BeginFrame(mCamera);
 
-        mDebugRenderer.DrawRect({0, 0, 0}, {10, 10, 10}, RandomUnitVec3());
+        mDebugRenderer.DrawCuboid({0, 0, 0}, {10, 10, 10}, RandomUnitVec3());
         mDebugRenderer.Flush();
 
         mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
             if (meshRenderer.material.size() != 0 && meshRenderer.mesh.size() != 0)
             {
-                Renderer::Submit(meshRenderer.material, meshRenderer.mesh, entity.GetComponent<Transform>());
-            }
-        });
-
-        mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
-            if (meshRenderer.material.size() != 0 && meshRenderer.mesh.size() != 0)
-            {
-                Renderer::Submit(meshRenderer.material, meshRenderer.mesh, entity.GetComponent<Transform>());
+                const Mesh &mesh = mScene.GetResourceManager().GetMeshManager().GetMesh(meshRenderer.mesh);
+                const Material &material = mScene.GetResourceManager().GetMaterialManager().GetMaterial(meshRenderer.material);
+                Renderer::Submit(mesh, material, entity.GetComponent<Transform>(), mScene.GetResourceManager().GetTextureManager());
             }
         });
 
         mScene.Each<TextComponent>([&](Entity entity, TextComponent &textComponent) {
             if (textComponent.font.size() != 0 && entity.HasComponent<Transform>())
             {
-                TextRenderer::DrawText(textComponent.font, textComponent.text, textComponent.spacing, textComponent.forgroundColor, textComponent.backgroundColor, entity.GetComponent<Transform>());
+                TextRenderer::DrawText(mScene.GetResourceManager().GetFontManager().GetFont(textComponent.font), textComponent.text, textComponent.spacing, textComponent.forgroundColor, textComponent.backgroundColor, entity.GetComponent<Transform>());
             }
         });
 
@@ -158,8 +163,11 @@ class Editor : public Application
 
     void OnEnd() override
     {
+
+#if ENABLE_EXPORT
         SceneSerializer serializer;
         serializer.Export("test.json", mScene);
+#endif
         Light::Terminate();
         TextRenderer::Terminate();
     }

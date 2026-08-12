@@ -120,6 +120,11 @@ bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory
 
     for (const auto &entry : entries)
     {
+        if (std::filesystem::relative(entry.path(), data.currentDirectory).string()[0] == '.' && !config.showHiddenFiles)
+        {
+            continue;
+        }
+
         typeString = "F: ";
         if (entry.is_directory())
         {
@@ -127,6 +132,11 @@ bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory
         }
 
         std::string displayPath = typeString + std::filesystem::relative(entry.path(), data.currentDirectory).string();
+
+        if (entry.is_directory())
+        {
+            displayPath += '/';
+        }
         if (ImGui::Selectable(displayPath.c_str(), data.selectedPath == entry.path(), ImGuiSelectableFlags_AllowDoubleClick))
         {
             if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
@@ -187,11 +197,11 @@ void EditorUI::Initialize(const Window &window, const Surface &surface)
     ImGui_ImplGlfw_InitForVulkan(window.GetNativeWindow(), true);
     ImGui_ImplVulkan_InitInfo initInfo =
         {
-            .Instance = GraphicsContext::GetInstance(),
-            .PhysicalDevice = GraphicsContext::GetPhysicalDevice(),
-            .Device = GraphicsContext::GetDevice(),
-            .QueueFamily = GraphicsContext::GetQueueIndices().graphics,
-            .Queue = GraphicsContext::GetQueues().graphics,
+            .Instance = GraphicsContext::GetCurrentContext().GetInstance(),
+            .PhysicalDevice = GraphicsContext::GetCurrentContext().GetPhysicalDevice(),
+            .Device = GraphicsContext::GetCurrentContext().GetDevice(),
+            .QueueFamily = GraphicsContext::GetCurrentContext().GetQueueIndices().graphics,
+            .Queue = GraphicsContext::GetCurrentContext().GetQueues().graphics,
             .DescriptorPool = descriptorPool,
             .MinImageCount = surface.swapchain.GetImageCount(),
             .ImageCount = surface.swapchain.GetImageCount(),
@@ -252,27 +262,26 @@ glm::vec3 EditorUI::ColorEdit3(std::string_view name, const glm::vec3 &initialVa
     return v;
 }
 
-void EditorUI::TextureSelector(std::string_view label, std::string& textureId)
+void EditorUI::TextureSelector(std::string_view label, std::string &textureId)
 {
-	std::string textureName = "";
-    if (TextureManager::HasTexture(textureId))
+    ImGui::PushID(label.data());
+    std::string textureName = "";
+    if (mScene->GetResourceManager().GetTextureManager().HasTexture(textureId))
     {
-        textureName = TextureManager::GetTexture(textureId).GetName();
+        textureName = mScene->GetResourceManager().GetTextureManager().GetTexture(textureId).GetName();
     }
 
-	ImGui::PushID(label.data());
-
-	if(ImGui::Button("Clear"))
-	{
-		textureId = "";
-	}
+    if (ImGui::Button("Clear"))
+    {
+        textureId = "";
+    }
     if (!ImGui::BeginCombo(label.data(), textureName.c_str()))
     {
-		ImGui::PopID();
+        ImGui::PopID();
         return;
     }
 
-    for (const auto &[id, texture] : TextureManager::GetMap())
+    for (const auto &[id, texture] : mScene->GetResourceManager().GetTextureManager().GetMap())
     {
         if (ImGui::Selectable(id.data(), id == textureId))
         {
@@ -280,17 +289,16 @@ void EditorUI::TextureSelector(std::string_view label, std::string& textureId)
         }
     }
 
-	ImGui::PopID();
-
     ImGui::EndCombo();
+    ImGui::PopID();
 }
 
 void EditorUI::FontSelector(std::string_view label, std::string &fontId)
 {
     std::string fontName = "None";
-    if (FontManager::HasFont(fontId))
+    if (mScene->GetResourceManager().GetFontManager().HasFont(fontId))
     {
-        fontName = FontManager::GetFont(fontId).GetName();
+        fontName = mScene->GetResourceManager().GetFontManager().GetFont(fontId).GetFileName();
     }
 
     if (!ImGui::BeginCombo(label.data(), fontName.c_str()))
@@ -298,15 +306,70 @@ void EditorUI::FontSelector(std::string_view label, std::string &fontId)
         return;
     }
 
-    for (const auto &[id, font] : FontManager::GetMap())
+    for (const auto &[id, font] : mScene->GetResourceManager().GetFontManager().GetMap())
     {
-        if (ImGui::Selectable(font.GetName().c_str(), id == fontId))
+        if (ImGui::Selectable(font.GetFileName().c_str(), id == fontId))
         {
             fontId = id;
         }
     }
 
     ImGui::EndCombo();
+}
+
+void EditorUI::ShaderImporter(bool &opened)
+{
+    ImGui::Begin("Shader importer", &opened);
+
+    ImGui::InputText("Identifier", &mShaderPath.id);
+
+    ImGui::PushID("vertex");
+
+    Button("...", [&] {
+        ImGui::GetStateStorage()->SetBool(ImGui::GetID("openVertexPath"), true);
+    });
+
+    if (ImGui::GetStateStorage()->GetBool(ImGui::GetID("openVertexPath")))
+    {
+        if (mFileDialog.OpenFile("Vertex Path", ".", mShaderPath.vertexPath))
+        {
+            ImGui::GetStateStorage()->SetBool(ImGui::GetID("openVertexPath"), false);
+        }
+    }
+
+    ImGui::SameLine();
+    ImGui::InputText("vertex", &mShaderPath.vertexPath);
+    ImGui::PopID();
+
+    ImGui::PushID("fragment");
+
+    Button("...", [&] {
+        ImGui::GetStateStorage()->SetBool(ImGui::GetID("openFragmentPath"), true);
+    });
+
+    if (ImGui::GetStateStorage()->GetBool(ImGui::GetID("openFragmentPath")))
+    {
+        if (mFileDialog.OpenFile("Fragment Path", ".", mShaderPath.fragmentPath))
+        {
+            ImGui::GetStateStorage()->SetBool(ImGui::GetID("openFragmentPath"), false);
+        }
+    }
+
+    ImGui::SameLine();
+    ImGui::InputText("fragment", &mShaderPath.fragmentPath);
+    ImGui::PopID();
+
+    Button("Import", [&] {
+        mScene->GetResourceManager().GetShaderManager().Load(mShaderPath.id, mShaderPath.vertexPath, mShaderPath.fragmentPath, true);
+        mShaderPath = {};
+    });
+    ImGui::SameLine();
+    Button("Cancel", [&] {
+        opened = false;
+        mShaderPath = {};
+    });
+
+    ImGui::End();
 }
 
 void EditorUI::SetScene(Scene &scene)
@@ -331,6 +394,7 @@ void EditorUI::OnRender(Camera &camera, CameraController &controller)
     EntityPanel();
     ModelImporterPanel();
     ImageImporterPanel();
+    ShaderImporter(mEnableShaderImporter);
 
     ImGui::Render();
 }
@@ -353,18 +417,14 @@ void EditorUI::EntityPanel()
         {
             Entity entity = mScene->CreateEntity(mEntityName);
             entity.AddComponent<Transform>();
-            entity.GetComponent<EntityMetadata>().enableSerializing = true;
         }
         ImGui::EndPopup();
     }
 
     mScene->Each<EntityMetadata>([&](Entity entity, EntityMetadata &metadata) {
-        if (metadata.enableSerializing)
+        if (ImGui::Selectable(metadata.name.c_str(), mSelectedEntity.GetId() == entity.GetId()))
         {
-            if (ImGui::Selectable(metadata.name.c_str(), mSelectedEntity.GetId() == entity.GetId()))
-            {
-                mSelectedEntity = entity;
-            }
+            mSelectedEntity = entity;
         }
     });
 
@@ -399,7 +459,7 @@ void EditorUI::PropertyPanel()
         }
 
         Button("Delete", [&] {
-            mSelectedEntity.GetComponent<EntityMetadata>().enableSerializing = false;
+
         });
 
         TransformController();
@@ -522,7 +582,7 @@ void EditorUI::ImageImporterPanel()
     std::string filename;
     if (mFileDialog.OpenFile("Import Image", "", filename, &mEnableImageImporter))
     {
-        TextureManager::LoadTexture(filename, filename);
+        mScene->GetResourceManager().GetTextureManager().LoadTexture(filename, filename);
     }
 }
 
@@ -591,7 +651,7 @@ void EditorUI::MeshRendererController()
 
     if (ImGui::BeginCombo("Material", component.material.c_str()))
     {
-        for (const auto &[id, material] : MaterialManager::GetMap())
+        for (const auto &[id, material] : mScene->GetResourceManager().GetMaterialManager().GetMap())
         {
             if (ImGui::Selectable(material.name.c_str(), id == component.material))
             {
@@ -604,7 +664,7 @@ void EditorUI::MeshRendererController()
 
     if (ImGui::BeginCombo("Mesh", component.mesh.c_str()))
     {
-        for (const auto &[id, mesh] : MeshManager::GetMap())
+        for (const auto &[id, mesh] : mScene->GetResourceManager().GetMeshManager().GetMap())
         {
             if (ImGui::Selectable(mesh.GetName().c_str(), id == component.mesh))
             {
@@ -615,9 +675,9 @@ void EditorUI::MeshRendererController()
         ImGui::EndCombo();
     }
 
-    if (MaterialManager::HasMaterial(component.material))
+    if (mScene->GetResourceManager().GetMaterialManager().HasMaterial(component.material))
     {
-        Material &cMaterial = MaterialManager::GetMaterial(component.material);
+        Material &cMaterial = mScene->GetResourceManager().GetMaterialManager().GetMaterial(component.material);
 
         ImGui::SeparatorText("Material");
 
@@ -732,7 +792,7 @@ void EditorUI::Present(const Surface &surface)
     Renderer::mPresentRenderPass.CmdEndRenderPass(Renderer::mPresentCommandBuffer);
     Renderer::mPresentCommandBuffer.EndRecording();
 
-    Renderer::mPresentCommandBuffer.QueueSubmit(GraphicsContext::GetQueues().graphics, Renderer::mImageAcquiredSemaphore, Renderer::mSwapchainRenderFinished, PipelineStage::ColorAttachmentOutput);
+    Renderer::mPresentCommandBuffer.QueueSubmit(GraphicsContext::GetCurrentContext().GetQueues().graphics, Renderer::mImageAcquiredSemaphore, Renderer::mSwapchainRenderFinished, PipelineStage::ColorAttachmentOutput);
 
     VkSwapchainKHR swapchain[] =
         {
@@ -753,9 +813,9 @@ void EditorUI::Present(const Surface &surface)
             .pImageIndices = &imageIndex,
         };
 
-    vkQueuePresentKHR(GraphicsContext::GetQueues().graphics, &presentInfo);
+    vkQueuePresentKHR(GraphicsContext::GetCurrentContext().GetQueues().graphics, &presentInfo);
 
-    vkDeviceWaitIdle(GraphicsContext::GetDevice());
+    vkDeviceWaitIdle(GraphicsContext::GetCurrentContext().GetDevice());
 }
 
 void EditorUI::MainMenuBar()
@@ -781,6 +841,7 @@ void EditorUI::MainMenuBar()
     {
         MenuItem("Import Model", [&]() { mEnableModelImporter = true; });
         MenuItem("Import Image", [&]() { mEnableImageImporter = true; });
+        MenuItem("Import Shader", [&]() { mEnableShaderImporter = true; });
         ImGui::EndMenu();
     }
 
@@ -801,7 +862,7 @@ void EditorUI::SetImageForViewer(VkImageView view)
             .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
             .pImageInfo = &imageInfo,
         };
-    vkUpdateDescriptorSets(GraphicsContext::GetDevice(), 1, &write, 0, nullptr);
+    vkUpdateDescriptorSets(GraphicsContext::GetCurrentContext().GetDevice(), 1, &write, 0, nullptr);
 }
 
 void EditorUI::SetColor(const ImGuiStyle &style)
