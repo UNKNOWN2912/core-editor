@@ -37,7 +37,7 @@ class Editor : public Application
         spec.deviceType = DeviceType::Dedicated;
         SetRendererSpecification(spec);
         Renderer::SetSampleCount(SampleCount::One);
-        Renderer::SetResolution({3840, 2160});
+        Renderer::SetResolution({1920, 1080});
     }
 
     void OnStart() override
@@ -55,17 +55,12 @@ class Editor : public Application
         TextRenderer::Initialize();
 
 #if ENABLE_IMPORT
-        SceneSerializer serializer;
-        serializer.Import("test.json", mScene);
+        if (std::filesystem::exists("test.json"))
+        {
+            SceneSerializer serializer;
+            serializer.Import("test.json", mScene);
+        }
 #endif
-
-        // Renderer::SetBasicShader(ShaderManager::GetBuiltinIdentifier().pbr, "Shaders/physical.vert.spv", "Shaders/physical.frag.spv");
-
-        // if (std::filesystem::exists("./test.json"))
-        // {
-        //     SceneSerializer serializer;
-        //     serializer.Import("test.json", mScene);
-        // }
 
 #if IMPORT_MODELS
         mScene.GetResourceManager().GetFontManager().Load("Fonts/GoogleSans-Regular.ttf", "MainFont");
@@ -74,6 +69,11 @@ class Editor : public Application
         modelImporter.Import("./Models/Cube/Cube.gltf", mScene);
         modelImporter.Import("./Models/Room/room.gltf", mScene);
 #endif
+
+        if (!mScene.GetResourceManager().GetShaderManager().Has("pbr"))
+        {
+            mScene.GetResourceManager().GetShaderManager().Load("pbr", "Shaders/physical.vert.spv", "Shaders/physical.frag.spv", Renderer::SetupSceneShader);
+        }
 
 #if ENABLE_EDITOR
         mEditorUi.Initialize(GetWindow(), mSurface);
@@ -97,6 +97,10 @@ class Editor : public Application
         {
             Close();
         }
+        if (key == Key::J)
+        {
+            mDebugRenderer.Enable(!mDebugRenderer.IsEnabled());
+        }
     }
 
     void OnUpdate() override
@@ -112,7 +116,17 @@ class Editor : public Application
             const Transform &transform = entity.GetComponent<Transform>();
             light.SetPosition(transform.position);
             light.SetDirection(transform.rotation);
-            light.SetCamera(mCamera);
+
+            static glm::vec3 previousPos;
+            static glm::vec3 previousFront;
+
+            if (previousPos != mCamera.GetPosition() || previousFront != mCamera.GetFront())
+            {
+                light.SetCamera(mCamera);
+            }
+
+            previousPos = mCamera.GetPosition();
+            previousFront = mCamera.GetFront();
             light.GenerateShadowMap(Renderer::GetRenderCommands());
             Renderer::AddLight(light);
         });
@@ -121,7 +135,20 @@ class Editor : public Application
 
         Renderer::BeginFrame(mCamera);
 
-        mDebugRenderer.DrawCuboid({0, 0, 0}, {10, 10, 10}, RandomUnitVec3());
+        mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
+            if (meshRenderer.material.size() != 0 && meshRenderer.mesh.size() != 0)
+            {
+                const Mesh &mesh = mScene.GetResourceManager().GetMeshManager().GetMesh(meshRenderer.mesh);
+                const Material &material = mScene.GetResourceManager().GetMaterialManager().GetMaterial(meshRenderer.material);
+                const Transform &transform = entity.GetComponent<Transform>();
+
+                if (material.drawPriority == 0)
+                {
+                    mDebugRenderer.DrawCuboid(transform.GetMatrix() * glm::vec4(mesh.GetMinVertex(), 1.f), transform.GetMatrix() * glm::vec4(mesh.GetMaxVertex(), 1.f), glm::vec3(1, 1, 1));
+                }
+            }
+        });
+
         mDebugRenderer.Flush();
 
         mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
@@ -129,7 +156,35 @@ class Editor : public Application
             {
                 const Mesh &mesh = mScene.GetResourceManager().GetMeshManager().GetMesh(meshRenderer.mesh);
                 const Material &material = mScene.GetResourceManager().GetMaterialManager().GetMaterial(meshRenderer.material);
-                Renderer::Submit(mesh, material, entity.GetComponent<Transform>(), mScene.GetResourceManager().GetTextureManager());
+                const Transform &transform = entity.GetComponent<Transform>();
+                if (material.drawPriority == 1)
+                {
+                    Renderer::Submit(mesh, material, transform, mScene.GetResourceManager().GetTextureManager(), mScene.GetResourceManager().GetShaderManager());
+                }
+            }
+        });
+
+        mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
+            if (meshRenderer.material.size() != 0 && meshRenderer.mesh.size() != 0)
+            {
+                const Mesh &mesh = mScene.GetResourceManager().GetMeshManager().GetMesh(meshRenderer.mesh);
+                const Material &material = mScene.GetResourceManager().GetMaterialManager().GetMaterial(meshRenderer.material);
+                if (material.drawPriority == 0)
+                {
+                    Renderer::Submit(mesh, material, entity.GetComponent<Transform>(), mScene.GetResourceManager().GetTextureManager(), mScene.GetResourceManager().GetShaderManager());
+                }
+            }
+        });
+
+        mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
+            if (meshRenderer.material.size() != 0 && meshRenderer.mesh.size() != 0)
+            {
+                const Mesh &mesh = mScene.GetResourceManager().GetMeshManager().GetMesh(meshRenderer.mesh);
+                const Material &material = mScene.GetResourceManager().GetMaterialManager().GetMaterial(meshRenderer.material);
+                if (material.drawPriority == 0)
+                {
+                    Renderer::Submit(mesh, material, entity.GetComponent<Transform>(), mScene.GetResourceManager().GetTextureManager(), mScene.GetResourceManager().GetShaderManager());
+                }
             }
         });
 

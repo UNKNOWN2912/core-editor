@@ -69,6 +69,8 @@ private:
     void EntityMetadataController();
     void TextComponentController();
 
+    void MaterialEditor();
+
     void SetImageForViewer(VkImageView view);
     void SetColor(const ImGuiStyle &style);
     void ShowCursor();

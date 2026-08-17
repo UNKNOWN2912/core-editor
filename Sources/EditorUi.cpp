@@ -3,6 +3,7 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
 #include "misc/cpp/imgui_stdlib.h"
+#include <cctype>
 #include <filesystem>
 #include <format>
 
@@ -73,6 +74,19 @@ const char *const imguiColorName[] =
         "ImGuiCol_ModalWindowDimBg",
 };
 
+std::string ToLower(const std::string &str)
+{
+    std::string result;
+    result.reserve(str.size());
+
+    for (char ch : str)
+    {
+        result += std::tolower(ch);
+    }
+
+    return result;
+}
+
 bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory, std::string &file, bool *opened, const FileDialogOpenFileConfig &config)
 {
     WidgetData &data = mData[label.data()];
@@ -91,7 +105,10 @@ bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory
         }
     }
 
+    static std::string search;
+
     ImGui::Begin(label.data(), opened);
+    ImGui::InputText("Search", &search);
     ImGui::Text("dir: %s", data.currentDirectory.c_str());
 
     if (ImGui::Selectable(".."))
@@ -117,10 +134,25 @@ bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory
 
         entries.push_back(entry);
     }
-
     for (const auto &entry : entries)
     {
-        if (std::filesystem::relative(entry.path(), data.currentDirectory).string()[0] == '.' && !config.showHiddenFiles)
+        bool f = true;
+        std::string pathString = entry.path().string();
+        std::string relativePathString = (std::filesystem::relative(entry.path(), data.currentDirectory).string());
+        std::string searchS = (search);
+
+        for (int i = 0; i < searchS.size() && i < relativePathString.size(); i++)
+        {
+            if (std::tolower(relativePathString[i]) != std::tolower(searchS[i]))
+            {
+                f = false;
+            }
+        }
+
+        if (f == false)
+            continue;
+
+        if (relativePathString[0] == '.' && !config.showHiddenFiles)
         {
             continue;
         }
@@ -131,7 +163,7 @@ bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory
             typeString = "D: ";
         }
 
-        std::string displayPath = typeString + std::filesystem::relative(entry.path(), data.currentDirectory).string();
+        std::string displayPath = typeString + relativePathString;
 
         if (entry.is_directory())
         {
@@ -275,6 +307,7 @@ void EditorUI::TextureSelector(std::string_view label, std::string &textureId)
     {
         textureId = "";
     }
+    ImGui::SameLine();
     if (!ImGui::BeginCombo(label.data(), textureName.c_str()))
     {
         ImGui::PopID();
@@ -360,7 +393,7 @@ void EditorUI::ShaderImporter(bool &opened)
     ImGui::PopID();
 
     Button("Import", [&] {
-        mScene->GetResourceManager().GetShaderManager().Load(mShaderPath.id, mShaderPath.vertexPath, mShaderPath.fragmentPath, true);
+        mScene->GetResourceManager().GetShaderManager().Load(mShaderPath.id, mShaderPath.vertexPath, mShaderPath.fragmentPath, Renderer::SetupSceneShader);
         mShaderPath = {};
     });
     ImGui::SameLine();
@@ -395,6 +428,7 @@ void EditorUI::OnRender(Camera &camera, CameraController &controller)
     ModelImporterPanel();
     ImageImporterPanel();
     ShaderImporter(mEnableShaderImporter);
+    MaterialEditor();
 
     ImGui::Render();
 }
@@ -638,6 +672,124 @@ void EditorUI::TextComponentController()
     ImGui::PopID();
 }
 
+void EditorUI::MaterialEditor()
+{
+    ImGui::Begin("Material editor", ImGui::GetStateStorage()->GetBoolRef(ImGui::GetID("EnableMaterialEditor")));
+    static std::string preview = "None";
+
+    if (ImGui::BeginCombo("Material", preview.c_str()))
+    {
+        for (const auto &[id, material] : mScene->GetResourceManager().GetMaterialManager().GetMap())
+        {
+            if (ImGui::Selectable(id.c_str(), preview == id))
+            {
+                preview = id;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    if (mScene->GetResourceManager().GetMaterialManager().HasMaterial(preview))
+    {
+        Material &material = mScene->GetResourceManager().GetMaterialManager().GetMaterial(preview);
+
+        ImGui::InputText("Name", &material.name);
+
+        ImGui::SliderFloat("Roughness", &material.roughnessFactor, 0.1f, 1.f);
+        ImGui::SliderFloat("Metallic", &material.metallicFactor, 0.01f, 1.f);
+        ImGui::ColorEdit4("Color", &material.colorFactor.x);
+
+        TextureSelector("Albedo Texture", material.albedoTexture);
+        TextureSelector("Roughness Texture", material.roughnessTexture);
+        TextureSelector("Metallic Texture", material.metallicTexture);
+
+        const char *cullModeString[] =
+            {
+                "None",
+                "Front",
+                "Back",
+            };
+
+        ImGui::Checkbox("Depth test", &material.enableDepthTest);
+        ImGui::Checkbox("Depth write", &material.enableDepthWrite);
+
+        if (ImGui::BeginCombo("Cull mode", cullModeString[(uint64_t)material.cullMode]))
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                if (ImGui::Selectable(cullModeString[i], (uint64_t)material.cullMode == i))
+                {
+                    material.cullMode = (CullMode)i;
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::InputInt("Priority", &material.drawPriority);
+    }
+    else
+    {
+        static Material material;
+
+        ImGui::InputText("Name", &material.name);
+
+        if (ImGui::BeginCombo("Shader", material.shader.c_str()))
+        {
+            for (const auto &[id, shader] : mScene->GetResourceManager().GetShaderManager().GetMap())
+            {
+                if (ImGui::Selectable(id.c_str(), id == material.shader))
+                {
+                    material.shader = id;
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::SliderFloat("Roughness", &material.roughnessFactor, 0.1f, 1.f);
+        ImGui::SliderFloat("Metallic", &material.metallicFactor, 0.01f, 1.f);
+        ImGui::ColorEdit4("Color", &material.colorFactor.x);
+
+        TextureSelector("Albedo Texture", material.albedoTexture);
+        TextureSelector("Roughness Texture", material.roughnessTexture);
+        TextureSelector("Metallic Texture", material.metallicTexture);
+
+        const char *cullModeString[] =
+            {
+                "None",
+                "Front",
+                "Back",
+            };
+
+        if (ImGui::BeginCombo("Cull mode", cullModeString[(uint64_t)material.cullMode]))
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                if (ImGui::Selectable(cullModeString[i], (uint64_t)material.cullMode == i))
+                {
+                    material.cullMode = (CullMode)i;
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::Checkbox("Depth test", &material.enableDepthTest);
+        ImGui::Checkbox("Depth write", &material.enableDepthWrite);
+
+        ImGui::InputInt("Priority", &material.drawPriority);
+
+        Button("Create", [&] {
+            mScene->GetResourceManager().GetMaterialManager().AddMaterial(material, material.name);
+            material = Material();
+        });
+        ImGui::SameLine();
+        Button("Cancel", [&] {
+            material = Material();
+        });
+    }
+
+    ImGui::End();
+}
+
 void EditorUI::MeshRendererController()
 {
     if (!mSelectedEntity.HasComponent<MeshRendererComponent>())
@@ -778,8 +930,8 @@ void EditorUI::Present(const Surface &surface)
     };
 
     VkDescriptorSet descriptorSets[] = {Renderer::mPresentInputDescriptor.GetDescriptorSet()};
-    vkCmdBindDescriptorSets(Renderer::mPresentCommandBuffer.GetHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS, Renderer::mPresentPipeline.GetPipelineLayout(), 0, 1, descriptorSets, 0, nullptr);
-    Renderer::mPresentPipeline.CmdBindPipeline(Renderer::mPresentCommandBuffer);
+    vkCmdBindDescriptorSets(Renderer::mPresentCommandBuffer.GetHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS, Renderer::mPresentShader.GetGraphicsPipeline().GetPipelineLayout(), 0, 1, descriptorSets, 0, nullptr);
+    Renderer::mPresentShader.GetGraphicsPipeline().CmdBindPipeline(Renderer::mPresentCommandBuffer);
 
     vkCmdSetViewport(Renderer::mPresentCommandBuffer.GetHandle(), 0, 1, &viewport);
     vkCmdSetScissor(Renderer::mPresentCommandBuffer.GetHandle(), 0, 1, &scissor);
@@ -834,6 +986,7 @@ void EditorUI::MainMenuBar()
 
     if (ImGui::BeginMenu("View"))
     {
+        MenuItem("Material Editor", [&]() { ImGui::GetStateStorage()->SetBool(ImGui::GetID("EnableMaterialEditor"), true); });
         ImGui::EndMenu();
     }
 

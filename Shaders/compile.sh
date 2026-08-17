@@ -8,3 +8,4 @@ echo "Compiling shaders"
 ./compile_shader.sh text
 ./compile_shader.sh bezier
 ./compile_shader.sh debugLine
+./compile_shader.sh depthPrepass
