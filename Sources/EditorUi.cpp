@@ -493,7 +493,7 @@ void EditorUI::PropertyPanel()
         }
 
         Button("Delete", [&] {
-
+            mScene->DestroyEntity(mSelectedEntity);
         });
 
         TransformController();
@@ -537,8 +537,8 @@ void EditorUI::ModelImporterPanel()
     std::string filename;
     if (mFileDialog.OpenFile("Import Model", "", filename, &mEnableModelImporter))
     {
-        ModelImporter importer;
-        importer.Import(filename.c_str(), *mScene);
+        std::shared_ptr<ModelImporter> importer = std::make_shared<AssimpImporter>();
+        importer->Import(filename.c_str(), *mScene);
     }
 }
 

@@ -1,3 +1,4 @@
+#include "Assets/GLTFImporter.hpp"
 #include "CameraController.hpp"
 #include "EditorUi.hpp"
 #include "Maths/Random.hpp"
@@ -67,9 +68,9 @@ class Editor : public Application
 #if IMPORT_MODELS
         mScene.GetResourceManager().GetFontManager().Load("Fonts/GoogleSans-Regular.ttf", "MainFont");
         mScene.GetResourceManager().GetShaderManager().Load("pbr", "Shaders/physical.vert.spv", "Shaders/physical.frag.spv");
-        ModelImporter modelImporter;
-        modelImporter.Import("./Models/Cube/Cube.gltf", mScene);
-        modelImporter.Import("./Models/Room/room.gltf", mScene);
+        std::shared_ptr<ModelImporter> modelImporter = std::make_shared<GLTFImporter>();
+        modelImporter->Import("./Models/Cube/Cube.gltf", mScene);
+        modelImporter->Import("./Models/Room/room.gltf", mScene);
 #endif
 
         if (!mScene.GetResourceManager().GetShaderManager().Has("pbr"))
@@ -137,19 +138,19 @@ class Editor : public Application
 
         Renderer::BeginFrame(mCamera);
 
-        mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
-            if (meshRenderer.material.size() != 0 && meshRenderer.mesh.size() != 0)
-            {
-                const Mesh &mesh = mScene.GetResourceManager().GetMeshManager().GetMesh(meshRenderer.mesh);
-                const Material &material = mScene.GetResourceManager().GetMaterialManager().GetMaterial(meshRenderer.material);
-                const Transform &transform = entity.GetComponent<Transform>();
+        // mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
+        //     if (meshRenderer.material.size() != 0 && meshRenderer.mesh.size() != 0)
+        //     {
+        //         const Mesh &mesh = mScene.GetResourceManager().GetMeshManager().GetMesh(meshRenderer.mesh);
+        //         const Material &material = mScene.GetResourceManager().GetMaterialManager().GetMaterial(meshRenderer.material);
+        //         const Transform &transform = entity.GetComponent<Transform>();
 
-                if (material.drawPriority == 0)
-                {
-                    mDebugRenderer.DrawCuboid(transform.GetMatrix() * glm::vec4(mesh.GetMinVertex(), 1.f), transform.GetMatrix() * glm::vec4(mesh.GetMaxVertex(), 1.f), glm::vec3(1, 1, 1));
-                }
-            }
-        });
+        //         if (material.drawPriority == 0)
+        //         {
+        //             mDebugRenderer.DrawCuboid(transform.GetMatrix() * glm::vec4(mesh.GetMinVertex(), 1.f), transform.GetMatrix() * glm::vec4(mesh.GetMaxVertex(), 1.f), glm::vec3(1, 1, 1));
+        //         }
+        //     }
+        // });
 
         mDebugRenderer.Flush();
 
