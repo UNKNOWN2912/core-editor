@@ -2,4 +2,8 @@ Editor
 Build/
 *.json
 Shaders/*.spv
-
+Debug/
+Editor.exe
+Editor.ilk
+Editor.pdb
+.vs/

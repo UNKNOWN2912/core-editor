@@ -9,69 +9,69 @@
 
 const char *const imguiColorName[] =
     {
-        "ImGuiCol_Text",
-        "ImGuiCol_TextDisabled",
-        "ImGuiCol_WindowBg",
-        "ImGuiCol_ChildBg",
-        "ImGuiCol_PopupBg",
-        "ImGuiCol_Border",
-        "ImGuiCol_BorderShadow",
-        "ImGuiCol_FrameBg",
-        "ImGuiCol_FrameBgHovered",
-        "ImGuiCol_FrameBgActive",
-        "ImGuiCol_TitleBg",
-        "ImGuiCol_TitleBgActive",
-        "ImGuiCol_TitleBgCollapsed",
-        "ImGuiCol_MenuBarBg",
-        "ImGuiCol_ScrollbarBg",
-        "ImGuiCol_ScrollbarGrab",
-        "ImGuiCol_ScrollbarGrabHovered",
-        "ImGuiCol_ScrollbarGrabActive",
-        "ImGuiCol_CheckMark",
-        "ImGuiCol_CheckboxSelectedBg",
-        "ImGuiCol_SliderGrab",
-        "ImGuiCol_SliderGrabActive",
-        "ImGuiCol_Button",
-        "ImGuiCol_ButtonHovered",
-        "ImGuiCol_ButtonActive",
-        "ImGuiCol_Header",
-        "ImGuiCol_HeaderHovered",
-        "ImGuiCol_HeaderActive",
-        "ImGuiCol_Separator",
-        "ImGuiCol_SeparatorHovered",
-        "ImGuiCol_SeparatorActive",
-        "ImGuiCol_ResizeGrip",
-        "ImGuiCol_ResizeGripHovered",
-        "ImGuiCol_ResizeGripActive",
-        "ImGuiCol_InputTextCursor",
-        "ImGuiCol_TabHovered",
-        "ImGuiCol_Tab",
-        "ImGuiCol_TabSelected",
-        "ImGuiCol_TabSelectedOverline",
-        "ImGuiCol_TabDimmed",
-        "ImGuiCol_TabDimmedSelected",
-        "ImGuiCol_TabDimmedSelectedOverline",
-        "ImGuiCol_DockingPreview",
-        "ImGuiCol_DockingEmptyBg",
-        "ImGuiCol_PlotLines",
-        "ImGuiCol_PlotLinesHovered",
-        "ImGuiCol_PlotHistogram",
-        "ImGuiCol_PlotHistogramHovered",
-        "ImGuiCol_TableHeaderBg",
-        "ImGuiCol_TableBorderStrong",
-        "ImGuiCol_TableBorderLight",
-        "ImGuiCol_TableRowBg",
-        "ImGuiCol_TableRowBgAlt",
-        "ImGuiCol_TextLink",
-        "ImGuiCol_TextSelectedBg",
-        "ImGuiCol_TreeLines",
-        "ImGuiCol_DragDropTarget",
-        "ImGuiCol_DragDropTargetBg",
-        "ImGuiCol_UnsavedMarker",
-        "ImGuiCol_NavCursor",
-        "ImGuiCol_NavWindowingHighlight",
-        "ImGuiCol_NavWindowingDimBg",
-        "ImGuiCol_ModalWindowDimBg",
+        "Text",
+        "TextDisabled",
+        "Window Background",
+        "Child Background",
+        "Popup Background",
+        "Border",
+        "BorderShadow",
+        "Frame Background ",
+        "Frame Background Hovered",
+        "Frame Background Active",
+        "Title Background ",
+        "Title Background Active",
+        "Title Background Collapsed",
+        "MenuBar Background ",
+        "Scrollbar Background ",
+        "Scrollbar Grab ",
+        "Scrollbar Grab Hovered",
+        "Scrollbar Grab Active",
+        "CheckMark",
+        "CheckboxSelected Background ",
+        "Slider Grab ",
+        "Slider Grab Active",
+        "Button",
+        "Button Hovered",
+        "Button Active",
+        "Header",
+        "Header Hovered",
+        "Header Active",
+        "Separator",
+        "Separator Hovered",
+        "Separator Active",
+        "Resize Grip",
+        "Resize Grip Hovered",
+        "Resize Grip Active",
+        "Input Text Cursor",
+        "Tab Hovered",
+        "Tab",
+        "Tab Selected",
+        "Tab Selected Overline",
+        "Tab Dimmed",
+        "Tab Dimmed Selected",
+        "Tab Dimmed Selected Overline",
+        "Docking Preview",
+        "Docking Empty Background ",
+        "Plot Lines",
+        "Plot Lines Hovered",
+        "Plot Histogram",
+        "Plot Histogram Hovered",
+        "Table Header Background ",
+        "Table BorderStrong",
+        "Table BorderLight",
+        "Table Row Background ",
+        "Table Row Background Alt",
+        "Text Link",
+        "Text Selected Background ",
+        "Tree Lines",
+        "Drag Drop Target",
+        "Drag Drop Target Background ",
+        "Unsaved Marker",
+        "Nav Cursor",
+        "Nav Windowing Highlight",
+        "Nav Windowing Dim Background ",
+        "Modal Window Dim Background ",
 };
 
 std::string ToLower(const std::string &str)
@@ -137,8 +137,8 @@ bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory
     for (const auto &entry : entries)
     {
         bool f = true;
-        std::string pathString = entry.path().string();
-        std::string relativePathString = (std::filesystem::relative(entry.path(), data.currentDirectory).string());
+        std::string pathString = entry.path().generic_string();
+        std::string relativePathString = (std::filesystem::relative(entry.path(), data.currentDirectory).generic_string());
         std::string searchS = (search);
 
         for (int i = 0; i < searchS.size() && i < relativePathString.size(); i++)
@@ -180,7 +180,7 @@ bool FileDialog::OpenFile(std::string_view label, std::string_view rootDirectory
                 else
                 {
                     data.opened = false;
-                    file = std::filesystem::absolute(entry.path());
+                    file = std::filesystem::absolute(entry.path()).generic_string();
                     ImGui::End();
                     return true;
                 }
@@ -203,6 +203,8 @@ bool FileDialog::OpenDirectory(std::string_view label, std::string_view rootDire
     ImGui::Begin(label.data(), opened);
 
     ImGui::End();
+
+    return false;
 }
 
 void EditorUI::Initialize(const Window &window, const Surface &surface)

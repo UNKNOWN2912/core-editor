@@ -52,7 +52,7 @@ class Editor : public Application
 
         mSurface = Renderer::CreateSurface(GetWindow());
         GetWindow().SetTitle("Editor");
-        GetWindow().SetFullscreen(true);
+        GetWindow().SetFullscreen(false);
 
         Light::Initialize();
         TextRenderer::Initialize();
