@@ -3,8 +3,10 @@
 #include "EditorUi.hpp"
 #include "Maths/Random.hpp"
 #include "Renderer/DebugRenderer.hpp"
+#include "Vendor/json/single_include/nlohmann/json.hpp"
 #include <Engine.hpp>
 #include <filesystem>
+#include <fstream>
 
 // hello world
 
@@ -16,6 +18,9 @@
 
 #define ENABLE_EXPORT 1
 #define ENABLE_IMPORT 1
+
+#define EDITOR_LOAD_STATE 1
+#define EDITOR_SAVE_STATE 1
 
 class Editor : public Application
 {
@@ -39,7 +44,7 @@ class Editor : public Application
         RendererSpecification spec = GetRendererSpecification();
         spec.deviceType = DeviceType::Dedicated;
         SetRendererSpecification(spec);
-        Renderer::SetSampleCount(SampleCount::One);
+        Renderer::SetSampleCount(SampleCount::Four);
         Renderer::SetResolution({1920, 1080});
     }
 
@@ -52,7 +57,7 @@ class Editor : public Application
 
         mSurface = Renderer::CreateSurface(GetWindow());
         GetWindow().SetTitle("Editor");
-        GetWindow().SetFullscreen(false);
+        GetWindow().SetFullscreen(true);
 
         Light::Initialize();
         TextRenderer::Initialize();
@@ -62,6 +67,19 @@ class Editor : public Application
         {
             SceneSerializer serializer;
             serializer.Import("test.json", mScene);
+        }
+#endif
+
+#if EDITOR_LOAD_STATE
+        if (std::filesystem::exists("editor.json"))
+        {
+            std::ifstream input("editor.json");
+            nlohmann::json json = nlohmann::json::parse(input);
+
+            if (json.contains("cameraPosition"))
+            {
+                mCamera.SetPosition({json["cameraPosition"][0], json["cameraPosition"][1], json["cameraPosition"][2]});
+            }
         }
 #endif
 
@@ -118,7 +136,19 @@ class Editor : public Application
         mScene.Each<Light>([&](Entity entity, Light &light) {
             const Transform &transform = entity.GetComponent<Transform>();
             light.SetPosition(transform.position);
-            light.SetDirection(transform.rotation);
+
+            glm::vec3 direction = glm::vec3(0);
+
+            float yaw = transform.rotation.x;
+            float pitch = transform.rotation.y;
+
+            direction.x = glm::sin(glm::radians(yaw)) * glm::cos(glm::radians(pitch));
+            direction.y = glm::sin(glm::radians(pitch));
+            direction.z = glm::cos(glm::radians(yaw)) * glm::cos(glm::radians(pitch));
+
+            direction = glm::normalize(direction);
+
+            light.SetDirection(direction);
 
             static glm::vec3 previousPos;
             static glm::vec3 previousFront;
@@ -138,20 +168,6 @@ class Editor : public Application
 
         Renderer::BeginFrame(mCamera);
 
-        // mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
-        //     if (meshRenderer.material.size() != 0 && meshRenderer.mesh.size() != 0)
-        //     {
-        //         const Mesh &mesh = mScene.GetResourceManager().GetMeshManager().GetMesh(meshRenderer.mesh);
-        //         const Material &material = mScene.GetResourceManager().GetMaterialManager().GetMaterial(meshRenderer.material);
-        //         const Transform &transform = entity.GetComponent<Transform>();
-
-        //         if (material.drawPriority == 0)
-        //         {
-        //             mDebugRenderer.DrawCuboid(transform.GetMatrix() * glm::vec4(mesh.GetMinVertex(), 1.f), transform.GetMatrix() * glm::vec4(mesh.GetMaxVertex(), 1.f), glm::vec3(1, 1, 1));
-        //         }
-        //     }
-        // });
-
         mDebugRenderer.Flush();
 
         mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
@@ -163,18 +179,6 @@ class Editor : public Application
                 if (material.drawPriority == 1)
                 {
                     Renderer::Submit(mesh, material, transform, mScene.GetResourceManager().GetTextureManager(), mScene.GetResourceManager().GetShaderManager());
-                }
-            }
-        });
-
-        mScene.Each<MeshRendererComponent>([&](Entity entity, MeshRendererComponent &meshRenderer) {
-            if (meshRenderer.material.size() != 0 && meshRenderer.mesh.size() != 0)
-            {
-                const Mesh &mesh = mScene.GetResourceManager().GetMeshManager().GetMesh(meshRenderer.mesh);
-                const Material &material = mScene.GetResourceManager().GetMaterialManager().GetMaterial(meshRenderer.material);
-                if (material.drawPriority == 0)
-                {
-                    Renderer::Submit(mesh, material, entity.GetComponent<Transform>(), mScene.GetResourceManager().GetTextureManager(), mScene.GetResourceManager().GetShaderManager());
                 }
             }
         });
@@ -226,6 +230,16 @@ class Editor : public Application
         SceneSerializer serializer;
         serializer.Export("test.json", mScene);
 #endif
+
+#if EDITOR_LOAD_STATE
+        nlohmann::json json;
+        json["cameraPosition"] = {mCamera.GetPosition().x, mCamera.GetPosition().y, mCamera.GetPosition().z};
+
+        std::ofstream output("editor.json");
+        output << json;
+        output.close();
+#endif
+
         Light::Terminate();
         TextRenderer::Terminate();
     }
