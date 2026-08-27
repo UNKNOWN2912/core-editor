@@ -10,25 +10,15 @@ layout(set = 0, binding = 0) uniform UniformData
 }
 uniformData;
 
-layout(location = 0) out OutputData
-{
-    mat4 projections[6];
-    vec2 uv;
-}
-Output;
-
 layout(push_constant) uniform PushConstant
 {
     mat4 model;
+    float intensity;
+    uint projectionIndex;
 }
 pushConstant;
 
 void main()
 {
-    for (int i = 0; i < 6; i++)
-    {
-        Output.projections[i] = uniformData.projections[i];
-    }
-    Output.uv = aUv;
-    gl_Position = pushConstant.model * vec4(aPos, 1.0);
+    gl_Position = uniformData.projections[pushConstant.projectionIndex] * pushConstant.model * vec4(aPos, 1.0);
 }

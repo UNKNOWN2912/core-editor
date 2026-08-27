@@ -19,7 +19,7 @@ void CameraController::SetCamera(Camera &camera)
         .SetFront(glm::vec3(0.0f))
         .SetPosition(glm::vec3(0.f, 2.f, 2.f))
         .SetNearPlane(0.01f)
-        .SetFarPlane(1000.f);
+        .SetFarPlane(100.f);
 }
 const Camera &CameraController::GetCamera() const
 {
@@ -120,7 +120,7 @@ void CameraController::OnKeyPress(Key key)
     }
     if (key == Key::LeftControl)
     {
-        mSpeed *= 5;
+        mSpeed = 25;
     }
 }
 void CameraController::OnKeyRelease(Key key)
@@ -153,7 +153,7 @@ void CameraController::OnKeyRelease(Key key)
     }
     if (key == Key::LeftControl)
     {
-        mSpeed /= 5;
+        mSpeed = 5.f;
     }
 }
 void CameraController::OnMouseMove(const glm::vec2 &position, const glm::vec2 &offset)
